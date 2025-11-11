@@ -2,8 +2,6 @@ import pathway as pw
 from typing import Any, Callable
 import pandas as pd
 
-# --- Agent Prompts (Constants) ---
-
 BULL_PROMPT = """
 ROLE: Bull Analyst.
 GOAL: Argue in favor of investing in a stock.
@@ -18,76 +16,87 @@ FOCUS: risks, challenges, and negative indicators.
 Counter the bull's arguments effectively.
 """
 
+ANALYSIS_SUMMARY = """
+Market Report: {market_report}
+News Report: {news_report}
+Social Media Sentiment: {social_media_report}
+Fundamentals Report: {fundamentals_report}
+"""
+
+PROMPT_TEMPLATE = """
+{role_prompt}
+
+Here is the analysis:
+{analysis_summary}
+
+Conversation history:
+{debate_history}
+
+Your opponent's last argument: 
+{opponent_arg}
+
+Reflections: 
+{past_memory_str}
+
+Present your argument:
+"""
 
 
-# --- Pipeline 1: Bull vs. Bear Debate Factory ---
-
-def create_bull_bear_debate_builder(
+def create_bull_bear_debate_pipeline(
+    input_stream: pw.Table,
     llm: Any,
     bull_memory: Any,
     bear_memory: Any,
-) -> Callable[[pw.Table, int], pw.Table]:
+    num_rounds: int = 1,
+) -> pw.Table:
     """
-    A factory that takes dependencies and returns the actual pipeline construction function.
-
-    Args:
-        llm: The LLM client to be used for the debate.
-        bull_memory: The memory system for the Bull analyst.
-        bear_memory: The memory system for the Bear analyst.
-
-    Returns:
-        A function that constructs the bull-bear debate pipeline.
+    Constructs a multi-round debate pipeline. 
+    Its dependencies are pre-configured.
     """
 
-    # This is the function that will be returned.
-    # It has access to llm, bull_memory, and bear_memory from the outer scope.
-    def construct_bull_bear_debate_pipeline(
-        input_stream: pw.Table,
-        num_rounds: int = 1,
-    ) -> pw.Table:
-        """
-        Constructs a multi-round debate pipeline. Its dependencies are pre-configured.
-
-        Args:
-            input_stream: Table with initial analysis data.
-            num_rounds: The number of debate rounds.
-        """
+    def create_analyst_udf(agent_name: str, role_prompt: str, memory_system: Any):
         @pw.udf
-        def format_analysis_summary(market: str, news: str, social: str, fundamentals: str) -> str:
-            return f"\nMarket Report: {market}\nNews Report: {news}\nSocial Media Sentiment: {social}\nFundamentals Report: {fundamentals}"
+        def run_analyst(analysis_summary: str, debate_history: str) -> str:
+            past_memories = memory_system.get_memories(analysis_summary)
+            past_memory_str = "\n".join([mem.get("recommendation", "") for mem in past_memories])
 
-        def create_analyst_udf(agent_name: str, role_prompt: str, memory_system: Any):
-            @pw.udf
-            def run_analyst(analysis_summary: str, debate_history: str) -> str:
-                # Accesses memory_system and llm from the closure
-                past_memories = memory_system.get_memories(analysis_summary + debate_history)
-                past_memory_str = "\n".join([mem.get("recommendation", "") for mem in past_memories])
-                history_lines = debate_history.strip().split('\n')
-                opponent_arg = history_lines[-1] if history_lines else "None (you are making the opening statement)"
-                past_context = f"Conversation history: {debate_history or '(Empty)'}\nYour opponent's last argument: {opponent_arg}\nReflections: {past_memory_str or 'None'}"
-                prompt = f"{role_prompt}\nHere is the analysis:\n{analysis_summary}\n\n{past_context}\n\nPresent your argument:"
-                response = llm.invoke(prompt).content.strip()
-                new_argument = f"{agent_name}: {response}"
-                return f"{debate_history}\n{new_argument}".strip()
-            return run_analyst
+            history_lines = debate_history.strip().split('\n')
+            opponent_arg = history_lines[-1] if history_lines else None
 
-        analyzed_data = input_stream.with_columns(
-            analysis_summary=format_analysis_summary(pw.this.market_report, pw.this.news_report, pw.this.social_media_report, pw.this.fundamentals_report),
-            debate_history="",
-        )
+            prompt = PROMPT_TEMPLATE.format(
+                role_prompt=role_prompt,
+                analysis_summary=analysis_summary,
+                debate_history=debate_history or "(EMPTY)",
+                opponent_arg=opponent_arg or "(NONE)",
+                past_memory_str=past_memory_str or "(NONE)",
+            )
 
-        # UDFs are created using the dependencies from the factory scope
-        bull_udf = create_analyst_udf("Bull Analyst", BULL_PROMPT, bull_memory)
-        bear_udf = create_analyst_udf("Bear Analyst", BEAR_PROMPT, bear_memory)
+            response = llm.invoke(prompt).content.strip()
+            new_argument = f"{agent_name}: {response}"
+            new_debate_history = f"{debate_history}\n{new_argument}".strip()
+            return new_debate_history
+        return run_analyst
 
-        debated_data = analyzed_data
-        for _ in range(num_rounds):
-            debated_data = debated_data.with_columns(debate_history=bull_udf(pw.this.analysis_summary, pw.this.debate_history))
-            debated_data = debated_data.with_columns(debate_history=bear_udf(pw.this.analysis_summary, pw.this.debate_history))
+    bull_bear_table = input_stream.with_columns(
+        analysis_summary=ANALYSIS_SUMMARY.format(
+            market_report=pw.this.market_report,
+            news_report=pw.this.news_report,
+            social_media_report=pw.this.social_media_report,
+            fundamentals_report=pw.this.fundamentals_report,
+        ),
+        debate_history="",
+    )
+    
+    bull_udf = create_analyst_udf("Bull Analyst", BULL_PROMPT, bull_memory)
+    bear_udf = create_analyst_udf("Bear Analyst", BEAR_PROMPT, bear_memory)
 
-        return debated_data
+    debated_data = bull_bear_table
+    for _ in range(num_rounds):
+        debated_data = debated_data.with_columns(debate_history=bull_udf(pw.this.analysis_summary, pw.this.debate_history))
+        debated_data = debated_data.with_columns(debate_history=bear_udf(pw.this.analysis_summary, pw.this.debate_history))
 
-    return construct_bull_bear_debate_pipeline
+    return debated_data
+
 
 
 

@@ -1,8 +1,6 @@
 import pathway as pw
 from typing import Any
-import pandas as pd
 
-# --- Agent Prompts (Constants) ---
 
 RISKY_PROMPT = """
 ROLE: Risky Risk Analyst
@@ -22,9 +20,21 @@ GOAL: Provide a balanced, data-driven perspective.
 FOCUS: Objectively weigh the potential rewards presented by the Risky Analyst against the potential downsides raised by the Safe Analyst. Act as a mediator and seek a logical middle ground.
 """
 
-# --- Core Pipeline Construction Function ---
+PROMPT_TEMPLATE = """
+{role_prompt}
 
-def construct_risk_debate_pipeline(
+Here is the investment plan to be debated:
+{trader_plan}
+
+Here is the debate so far:
+{debate_history}
+
+Your opponents' arguments are the most recent entries in the history above.
+Critique or support the plan from your unique perspective and respond to your colleagues.
+"""
+
+
+def create_risk_debate_pipeline(
     input_stream: pw.Table,
     llm: Any,
     num_rounds: int = 1,
@@ -32,70 +42,41 @@ def construct_risk_debate_pipeline(
     """
     Constructs a Pathway pipeline that simulates a multi-round risk debate
     between Risky, Safe, and Neutral analysts.
-
-    Args:
-        input_stream (pw.Table):
-            A Pathway table with the proposed investment plan.
-            Must include the column: 'trader_investment_plan'.
-        llm (Any):
-            An LLM client instance (e.g., from LiteLLM, Langchain) for the debate,
-            with an `.invoke(prompt)` method.
-        num_rounds (int, optional):
-            The number of full debate rounds (1 round = 1 turn for each analyst).
-            Defaults to 1.
-
-    Returns:
-        pw.Table:
-            The final table containing the original data plus the complete
-            risk debate history.
     """
 
     def create_risk_analyst_udf(agent_name: str, role_prompt: str, llm_client: Any):
-        """A factory to create a UDF for a specific risk analyst."""
-
         @pw.udf
         def run_risk_analyst(trader_plan: str, debate_history: str) -> str:
             """Generates an argument for one analyst and appends it to the history."""
 
-            prompt = f"""{role_prompt}
-
-            Here is the investment plan to be debated:
-            {trader_plan}
-            
-            Here is the debate so far:
-            {debate_history or '(You are the first to speak in the risk debate.)'}
-
-            Your opponents' arguments are the most recent entries in the history above.
-            Critique or support the plan from your unique perspective and respond to your colleagues.
-            """
+            prompt = PROMPT_TEMPLATE.format(
+                role_prompt=role_prompt,
+                trader_plan=trader_plan,
+                debate_history=debate_history or "(EMPTY)",
+            )
 
             response = llm_client.invoke(prompt).content.strip()
             new_argument = f"{agent_name}: {response}"
-            return f"{debate_history}\n{new_argument}".strip()
-
+            new_debate_history = f"{debate_history}\n{new_argument}".strip()
+            return new_debate_history
+        
         return run_risk_analyst
 
-    # Step 1: Initialize the debate history column
     risk_debate_data = input_stream.with_columns(
         risk_debate_history="",
     )
 
-    # Step 2: Instantiate the specific UDFs for each analyst
     risky_udf = create_risk_analyst_udf("Risky Analyst", RISKY_PROMPT, llm)
     safe_udf = create_risk_analyst_udf("Safe Analyst", SAFE_PROMPT, llm)
     neutral_udf = create_risk_analyst_udf("Neutral Analyst", NEUTRAL_PROMPT, llm)
 
-    # Step 3: Dynamically build the debate rounds
     for _ in range(num_rounds):
-        # Risky's turn
         risk_debate_data = risk_debate_data.with_columns(
             risk_debate_history=risky_udf(pw.this.trader_investment_plan, pw.this.risk_debate_history)
         )
-        # Safe's turn
         risk_debate_data = risk_debate_data.with_columns(
             risk_debate_history=safe_udf(pw.this.trader_investment_plan, pw.this.risk_debate_history)
         )
-        # Neutral's turn
         risk_debate_data = risk_debate_data.with_columns(
             risk_debate_history=neutral_udf(pw.this.trader_investment_plan, pw.this.risk_debate_history)
         )

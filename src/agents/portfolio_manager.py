@@ -1,8 +1,6 @@
 import pathway as pw
 from typing import Any
-import pandas as pd
 
-# --- Agent Prompt (Constant) ---
 
 PORTFOLIO_MANAGER_PROMPT = """
 ROLE: Portfolio Manager
@@ -20,36 +18,18 @@ Risk Debate History:
 {risk_debate}
 """
 
-# --- Core Pipeline Construction Function ---
 
-def construct_portfolio_manager_pipeline(
+def create_portfolio_manager_pipeline(
     input_stream: pw.Table,
     llm: Any,
 ) -> pw.Table:
     """
     Constructs a Pathway pipeline where a Portfolio Manager makes a final
     trade decision based on a proposed trader's plan and a risk debate.
-
-    Args:
-        input_stream (pw.Table):
-            A Pathway table containing the inputs for the decision.
-            Must include columns: 'trader_investment_plan', 'risk_debate_history'.
-        llm (Any):
-            An LLM client instance (e.g., from LiteLLM, Langchain) used for
-            the final decision. Must have an `.invoke(prompt)` method that
-            returns a response object with a `.content` attribute.
-
-    Returns:
-        pw.Table:
-            The final table containing the original data plus the portfolio
-            manager's final, binding trade decision.
     """
 
     @pw.udf
     def run_portfolio_manager(trader_plan: str, risk_debate: str) -> str:
-        """
-        Generates a final trade decision by invoking the Portfolio Manager LLM.
-        """
         prompt = PORTFOLIO_MANAGER_PROMPT.format(
             trader_plan=trader_plan,
             risk_debate=risk_debate
@@ -57,15 +37,14 @@ def construct_portfolio_manager_pipeline(
         response = llm.invoke(prompt).content.strip()
         return response
 
-    # Apply the UDF to the input stream to generate the final decision
-    final_decision_table = input_stream.with_columns(
-        final_trade_decision=run_portfolio_manager(
-            pw.this.trader_investment_plan,
-            pw.this.risk_debate_history
+    portfolio_manager_table = input_stream.with_columns(
+        final_investment_decision=run_portfolio_manager(
+            pw.this.trader_plan,
+            pw.this.risk_debate
         )
     )
 
-    return final_decision_table
+    return portfolio_manager_table
 
 
 # # --- Example Usage Block ---
