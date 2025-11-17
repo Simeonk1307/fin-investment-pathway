@@ -1,0 +1,35 @@
+NEWSAPI:
+  source:
+    docker_image: "airbyte/source-news-api:latest"
+    config:
+      api_key: "newsapi"  # add key in .env (check .env.example for reference)
+      category: "business"
+      country: "us"
+      language: "en"
+      sort_by: "publishedAt"
+      page_size: 100
+      max_pages: 5
+      # Optional: Use search query instead of category
+      # search_query: "stocks OR finance OR market"
+      # domains: "reuters.com,bloomberg.com"
+
+  streams:
+    - name: top_headlines
+# link to the official Airbyte NewsAPI connector documentation : https://docs.airbyte.com/integrations/sources/news-api
+
+GNEWS:
+  source:
+    docker_image: "airbyte/source-gnews:0.2.23"  
+    config:
+      api_key: "gnews"  # add key in .env (check .env.example for reference)
+      query: "Stocks OR Finance"
+      from_date: "2025-10-01"
+      to_date: "2025-10-31"
+      lang: "en"
+      country: "in"
+      max: 60
+      sortby : "publishedAt"
+
+
+
+
