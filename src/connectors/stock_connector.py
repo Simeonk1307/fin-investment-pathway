@@ -113,6 +113,8 @@ if __name__ == "__main__":
     connector = YFinanceStockConnector(
         symbols=tickers[:2]# Using only first 2 for testing purposes
     )
+
+    
     
     # Create Pathway table
     stock_table = pw.io.python.read(
