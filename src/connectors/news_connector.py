@@ -121,7 +121,7 @@ class GNewsConnector(BaseNewsConnector):
         }
     
     def get_past_news(self) -> List[Dict[str, str]]:
-        "Gnews Only give past 30 day news for free api plan also 100 requests per day limit also 100 `max` articles per request"
+        "Gnews only give past 30 day news, 100 requests per day limit and  `max` ten articles per request for free API plan"
         pass
 
 
