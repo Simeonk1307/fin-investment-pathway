@@ -9,9 +9,7 @@ import yaml
 from config.settings import Settings
 
 from ..schemas.news_schema import NewsSchema
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from ..logger_config import get_module_logger
 
 import json
 
@@ -19,10 +17,11 @@ import json
 
 class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
 
-    def __init__(self,poll_interval:int = 300,max_articles:int = 100):
+    def __init__(self, logger_name, poll_interval:int = 300,max_articles:int = 100):
         super().__init__()
         self.poll_interval = poll_interval
         self.max_articles = max_articles
+        self.logger = get_module_logger(logger_name)
         self.last_fetch_time = None
         self.seen_ids = set()
 
@@ -37,7 +36,7 @@ class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
         pass
     
     def run(self):
-        logger.info(f"Starting {self.__class__.__name__}...")
+        self.logger.info(f"Starting {self.__class__.__name__}...")
         while True:
             try:
                 articles = self._fetch_articles()
@@ -58,7 +57,7 @@ class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
                 time.sleep(self.poll_interval)
             
             except Exception as e:
-                logger.warning(
+                self.logger.warning(
                     f" Error:{e}"
                 )
 
@@ -92,7 +91,7 @@ class GNewsConnector(BaseNewsConnector):
             data = response.json()
             return data.get('articles', [])
         except Exception as e:
-            logger.error(f"Error fetching articles from GNews: {e}")
+            self.logger.error(f"Error fetching articles from GNews: {e}")
             return []
         
     def _parse_article(self, article: Dict) -> Dict[str, str]:
@@ -131,9 +130,10 @@ class AirbyteNewsConnector:
         "source_url": str,
     }
 
-    def __init__(self, api: Literal['NEWSAPI', 'GNEWS']):
+    def __init__(self, logger_name, api: Literal['NEWSAPI', 'GNEWS']):
         "Initialize news connector"
         self.api = api
+        self.logger = get_module_logger(logger_name)
         self.config_path = self.temp_config_modifier()
         self.schema = self.NewsSchema
 
@@ -167,15 +167,15 @@ class AirbyteNewsConnector:
                 yaml.dump(api_config, f)
 
             
-            logger.info("✅ Config file updated with API key.")
+            self.logger.info("✅ Config file updated with API key.")
             return new_path
 
         except Exception as e:
-            logger.error(f"Error updating config file: {e}")
+            self.logger.error(f"Error updating config file: {e}")
     
     @staticmethod
     @pw.udf
-    def parse_newsapi_article(data : pw.Json)->dict:
+    def parse_newsapi_article(self, data : pw.Json)->dict:
         try:
             article :dict = json.loads(json.loads(str(data)))
             #example output 
@@ -197,9 +197,9 @@ class AirbyteNewsConnector:
 
 
         except Exception as e:
-            logger.error(f"Error parsing NewsAPI article: {e}")
+            self.logger.error(f"Error parsing NewsAPI article: {e}")
 
-    def fetch_news(self,stream_name:str = "top_headlines",mode : str = 'static') ->pw.Table:
+    def fetch_news(self, stream_name:str = "top_headlines",mode : str = 'static') ->pw.Table:
 
         news_table = pw.io.airbyte.read(
             config_file_path= self.config_path,
@@ -231,11 +231,9 @@ if __name__ == "__main__":
 
     # pw.debug.compute_and_print(newsapi_table, include_id=False) # only for static mode
 
-    # Write to CSV
     pw.io.csv.write(table=newsapi_table,filename=output_path)
 
     pw.run()
-    logger.info(f"✅ Written structured data to {output_path}")
 
         
 

@@ -19,7 +19,7 @@ if __name__ == "__main__":
         schema=YFinanceSchema,
         autocommit_duration_ms=1000  # Commit every interval seconds
     )
-    output_path_stock = "stock_data_nvda.csv"
+    output_path_stock = "outputs/stock_data_nvda.csv"
     pw.io.csv.write(table=stock_table,filename=output_path_stock)
 
     msft_stock_connector = YFinanceStockConnector(tickers=["MSFT"], logger_name="MSFT_Connector")
@@ -28,7 +28,7 @@ if __name__ == "__main__":
         schema=YFinanceSchema,
         autocommit_duration_ms=1000  # Commit every interval seconds
     )
-    output_path_stock_msft = "stock_data_msft.csv"
+    output_path_stock_msft = "outputs/stock_data_msft.csv"
     pw.io.csv.write(table=stock_table_msft,filename=output_path_stock_msft)
 
     googl_stock_connector = YFinanceStockConnector(tickers=["GOOGL"], logger_name="GOOGL_Connector")
@@ -37,7 +37,7 @@ if __name__ == "__main__":
         schema=YFinanceSchema,
         autocommit_duration_ms=1000  # Commit every interval seconds
     )
-    output_path_stock_googl = "stock_data_googl.csv"
+    output_path_stock_googl = "outputs/stock_data_googl.csv"
     pw.io.csv.write(table=stock_table_googl,filename=output_path_stock_googl)
 
     pw.run()
