@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 import yaml
 from config.settings import Settings
 
+from ..schemas.news_schema import NewsSchema
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -16,17 +18,6 @@ import json
 
 
 class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
-
-    class NewsSchema(pw.Schema):
-        article_id: str
-        title: str
-        description: str
-        content: str
-        url: str
-        published_at: str
-        language: str
-        source_name: str
-        source_url: str
 
     def __init__(self,poll_interval:int = 300,max_articles:int = 100):
         super().__init__()

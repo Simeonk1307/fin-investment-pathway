@@ -1,1 +1,1 @@
-__all__ = ['connectors','agents']
+__all__ = ['connectors','agents', 'schema']

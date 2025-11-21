@@ -2,11 +2,11 @@ import pathway as pw
 import asyncio
 from typing import List, Dict, Any
 import datetime
-from ..logger_config import get_module_logger
 import os
-
 import yfinance as yf
-from ..schema.stock_schema import StockSchema
+
+from ..logger_config import get_module_logger
+from ..schemas.stock_schema import YFinanceSchema
 
 class YFinanceStockConnector(pw.io.python.ConnectorSubject):
     # For more details refer to: https://ranaroussi.github.io/yfinance/reference/yfinance.websocket.html 
@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     stock_table = pw.io.python.read(
         connector, 
-        schema=StockSchema,
+        schema=YFinanceSchema,
         autocommit_duration_ms=1000
     )
     
