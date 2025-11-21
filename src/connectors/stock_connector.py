@@ -1,91 +1,60 @@
 import pathway as pw
 import asyncio
 from typing import List, Dict, Any
-import logging
 import datetime
-
+from ..logger_config import get_module_logger
+import os
 
 import yfinance as yf
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from ..schema.stock_schema import StockSchema
 
 class YFinanceStockConnector(pw.io.python.ConnectorSubject):
-    #----test-version-- try running in separate jupyter notebook cell
-
-    #import yfinance as yf
-
-    # def message_handler(message):
-    #     print("Received message:", message)
-
-    # # Synchronous
-    # with yf.WebSocket() as ws:
-    #     ws.subscribe(["AAPL", "GOOGL"])
-    #     ws.listen(message_handler)
-
-    # # Asynchronous
-    # async def main():
-    #     async with yf.AsyncWebSocket() as ws:
-    #         await ws.subscribe(["AAPL", "GOOGL"])
-    #         await ws.listen()
-
-    # asyncio.run(main())
-    #----test-version-end--
+    # For more details refer to: https://ranaroussi.github.io/yfinance/reference/yfinance.websocket.html 
     """
     Asynchronous yFinance WebSocket connector for real-time stock prices
+        yfinance AsyncWebSocket offers close(), subscribe(symbols), unsubscribe(symbols) and listen(message_handler) methods.
     """
-    
-    class StockSchema(pw.Schema):
-        update_time:str
-        timestamp: pw.DateTimeNaive
-        date: str
-        symbol: str
-        price: float
-        change: float
-        change_percent: float
-        volume: int
 
+    #---- MAIN FUNCTIONS ----#
+    def __init__(self, tickers: List[str], logger_name):
+        super().__init__() # for parent class initialization
+        self.tickers = tickers
+        self.logger = get_module_logger(logger_name)
+        self.logger.info(f"Initialized YFinanceStockConnector with tickers: {tickers}")
     
-    def __init__(self, symbols: List[str]):
-        super().__init__()
-        self.symbols = symbols
-        logger.info(f"Initialized YFinanceStockConnector with symbols: {symbols}")
     
     def run(self):
         asyncio.run(self._async_run())
     
+    #----HELPER FUNCTIONS ----#
     async def _async_run(self):
-        
-        try:
-            async with yf.AsyncWebSocket() as ws:
-                await ws.subscribe(self.symbols)
-                
-                # Listen for messages
-                await ws.listen(self._on_message)
-                
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-    
-    def _on_message(self, message: Dict[str, Any]):
+        count = 1
+        while count < 5:
+            try:
+                async with yf.AsyncWebSocket() as ws:
+                    self.logger.info("yFinance WebSocket connection established")
+                    await ws.subscribe(self.tickers)
+                    self.logger.info("yFinance WebSocket subscribed to tickers: {self.tickers}")
 
-        try:
-            # yFinance message structure (example):
-            #{'id': 'GOOGL', 'price': 295.02, 'time': '1763739554000', 'exchange': 'NMS', 'quote_type': 8, 
-            # 'market_hours': 1, 'change_percent': 1.9243312, 'day_volume': '23172292', 'change': 5.569977,
-            # 'last_size': '300', 'price_hint': '2'}
-            
-            parsed = self._parse_stock_data(message)
-            if parsed:
-                # Send to Pathway buffer
-                self.next(**parsed)
-                
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
+                    await ws.listen(self._message_handler)
+                    self.logger.info("Listening on yFinance WebSocket")
+                    
+            except Exception as e:
+                self.logger.error(f"yFinance WebSocket error: {e}")
+                await asyncio.sleep(5)
+                self.logger.info(f"Attempting to reconnect to yFinance for {count}th time...")
+                count += 1
+        
+    def _message_handler(self, message: Dict[str, Any]):
+        self.logger.info(f"Received message: {message}")
+        parsed = self._parse_stock_data(message)
+        if parsed:
+            self.next(**parsed)
+        else:
+            self.logger.warning(f"Parsed data is None")     
     
     def _parse_stock_data(self, message: Dict) -> Dict[str, Any]:
         try:
-
-
             timestamp_ms = int(message.get("time", datetime.datetime.now().timestamp() * 1000 ))
             timestamp = pw.DateTimeNaive.fromtimestamp(timestamp_ms/1000)
 
@@ -100,33 +69,25 @@ class YFinanceStockConnector(pw.io.python.ConnectorSubject):
                 "change_percent": float(message.get("change_percent", 0.0)),
             }
         except Exception as e:
-            logger.error(f"Parse error: {e}")
+            self.logger.error(f"Failed to parse: {e}")
             return None
 
 
 # Usage
 if __name__ == "__main__":
-    output_path = "stock_data.csv"
+    output_path = "outputs/stock_data.csv"
     
-    # Create connector
     tickers = ["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","TSLA",]
     connector = YFinanceStockConnector(
-        symbols=tickers[:2]# Using only first 2 for testing purposes
+        tickers=tickers[:5]
     )
 
-    
-    
-    # Create Pathway table
     stock_table = pw.io.python.read(
         connector, 
-        schema=connector.StockSchema,
-        autocommit_duration_ms=1000  # Commit every 1 second
+        schema=StockSchema,
+        autocommit_duration_ms=1000
     )
     
-    # Write to CSV
     pw.io.csv.write(table=stock_table, filename=output_path)
     
-    # Run the pipeline
     pw.run()
-    
-    logger.info(f"✅ Stock data written to {output_path}")
