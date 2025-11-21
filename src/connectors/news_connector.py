@@ -233,9 +233,10 @@ if __name__ == "__main__":
     # connector = AirbyteNewsConnector(api="GNEWS")
 
     # newsapi_table = connector.fetch_news(stream_name="top_headlines",mode='static')
+    interval = 5  # seconds
 
-    connector = GNewsConnector(max_articles=100,poll_interval=10) #10 seconds
-    newsapi_table = pw.io.python.read(connector, schema=connector.NewsSchema,autocommit_duration_ms=10000)
+    connector = GNewsConnector(max_articles=100,poll_interval=interval) #10 seconds
+    newsapi_table = pw.io.python.read(connector, schema=connector.NewsSchema,autocommit_duration_ms= interval * 1000)
 
     # pw.debug.compute_and_print(newsapi_table, include_id=False) # only for static mode
 
