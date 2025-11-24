@@ -75,6 +75,8 @@ class YFinanceStockConnector(pw.io.python.ConnectorSubject):
 
 # Usage
 if __name__ == "__main__":
+    output_folder = "outputs"
+    os.makedirs(output_folder, exist_ok=True)
     output_path = "outputs/stock_data.csv"
     
     tickers = ["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","TSLA",]

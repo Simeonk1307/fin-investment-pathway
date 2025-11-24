@@ -3,9 +3,20 @@ from .stock_connector import YFinanceStockConnector
 from ..schemas.stock_schema import YFinanceSchema
 from ..schemas.news_schema import FinnHubNewsSchema
 import pathway as pw
+import os
 
 
 if __name__ == "__main__":
+
+    #-----------------------------------------------------------------------------------------
+
+    '''From main directory, run: python -m src.connectors.test'''
+
+    #-----------------------------------------------------------------------------------------
+
+    output_folder = "outputs"
+    os.makedirs(output_folder, exist_ok=True)
+
 
     # interval = 5  # seconds
     # output_path = "news.csv"

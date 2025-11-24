@@ -1,13 +1,12 @@
+import os
 import pathway as pw
 import requests
 from datetime import date, datetime, timedelta
 import time
 from typing import Literal, Optional, Dict, Any,Callable,List
-import logging
 from abc import ABC, abstractmethod
 import yaml
 from config.settings import Settings
-import asyncio
 import pandas as pd
 
 import finnhub
@@ -299,6 +298,8 @@ class AirbyteNewsConnector:
         
     
 if __name__ == "__main__":
+    output_folder = "outputs"
+    os.makedirs(output_folder, exist_ok=True)
 
     # connector = AirbyteNewsConnector(api="GNEWS")
 
