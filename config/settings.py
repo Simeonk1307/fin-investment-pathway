@@ -23,7 +23,11 @@ class Settings:
     APIKEYS: Dict[str, str] = {
         "NEWSAPI": os.getenv("NEWSAPI_KEY", ""),
         "GNEWS": os.getenv("GNEWS_API_KEY", ""),
+        "FINNHUB": os.getenv("FINNHUB_API_KEY", ""),
     }
+    for api, key in APIKEYS.items():
+        if key.startswith("your_") or key == "":
+            raise ValueError(f"API key for {api} is not set properly in environment variables.Please update the .env file.(Check .env.example for reference)")
 
     # Performance
     MAX_WORKERS = int(os.getenv("MAX_WORKERS", "10"))

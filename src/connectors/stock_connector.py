@@ -34,7 +34,7 @@ class YFinanceStockConnector(pw.io.python.ConnectorSubject):
                 async with yf.AsyncWebSocket() as ws:
                     self.logger.info("yFinance WebSocket connection established")
                     await ws.subscribe(self.tickers)
-                    self.logger.info("yFinance WebSocket subscribed to tickers: {self.tickers}")
+                    self.logger.info(f"yFinance WebSocket subscribed to tickers: {self.tickers}")
 
                     await ws.listen(self._message_handler)
                     self.logger.info("Listening on yFinance WebSocket")

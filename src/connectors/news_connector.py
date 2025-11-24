@@ -1,14 +1,17 @@
 import pathway as pw
 import requests
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import time
 from typing import Literal, Optional, Dict, Any,Callable,List
 import logging
 from abc import ABC, abstractmethod
 import yaml
 from config.settings import Settings
+import asyncio
+import pandas as pd
 
-from ..schemas.news_schema import NewsSchema
+import finnhub
+from ..schemas.news_schema import FinnHubNewsSchema,GNewsSchema
 from ..logger_config import get_module_logger
 
 import json
@@ -17,13 +20,14 @@ import json
 
 class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
 
-    def __init__(self, logger_name, poll_interval:int = 300,max_articles:int = 100):
+    def __init__(self, logger_name, poll_interval:int = 5):
         super().__init__()
         self.poll_interval = poll_interval
-        self.max_articles = max_articles
         self.logger = get_module_logger(logger_name)
         self.last_fetch_time = None
         self.seen_ids = set()
+
+        self.logger.info(f"Initialized {self.__class__.__name__} with poll interval: {poll_interval} seconds")
 
     @abstractmethod
     def _fetch_articles(self) -> List[Dict[str, Any]]:
@@ -43,7 +47,7 @@ class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
                 if articles:
                     for article in articles:
                         parsed = self._parse_article(article)
-                        article_id = parsed['article_id']
+                        article_id = parsed['id']
                         if article_id in self.seen_ids:
                             continue
                         self.seen_ids.add(article_id)
@@ -54,18 +58,95 @@ class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
                 
                 self.last_fetch_time = datetime.now()
 
+                self.logger.info(f"Fetched and processed {len(articles)} articles. Pausing for {self.poll_interval} seconds...")
+
                 time.sleep(self.poll_interval)
+
+                self.logger.info("Resuming fetch...")
             
             except Exception as e:
                 self.logger.warning(
                     f" Error:{e}"
                 )
+                time.sleep(10)  # wait before retrying
+
+class FinnHubNewsConnector(BaseNewsConnector):
+
+
+    def __init__(self,symbols : List[str],poll_interval: int = 120,lookback_days : int = 1, logger_name: str = "FinnHub_news_Connector"):
+
+        super().__init__(poll_interval=poll_interval, logger_name=logger_name)
+
+        self.api_key = Settings.APIKEYS.get("FINNHUB", "")
+
+        self.finnhub_client = finnhub.Client(api_key=self.api_key)
+
+        self.symbols = symbols
+
+        self.lookback_days = lookback_days
+
+        self.logger.info(f"Initialized FinnHubConnector for symbols: {symbols}")
+
+
+    def _fetch_articles(self) -> List[Dict[str, Any]]:
+
+        self.logger.info(f"Fetching articles for symbols: {self.symbols}")
+        try:
+            current_date = date.today()
+            from_date = current_date - timedelta(days=self.lookback_days)
+            all_articles = []
+            for symbol in self.symbols:
+                articles = self.finnhub_client.company_news(symbol, _from=from_date.strftime("%Y-%m-%d"), to=current_date.strftime("%Y-%m-%d"))
+                self.logger.info(f"Fetched {len(articles)} articles for symbol: {symbol}")
+                all_articles.extend(articles)
+            return all_articles 
+        except Exception as e:
+            self.logger.error(f"Error fetching articles from FinnHub: {e}")
+            return []
+        
+    def _parse_article(self, article: Dict) -> Dict[str, str]:
+
+        # self.logger.info(f"Parsing article: {article.get('id', 'N/A')}")
+        try:
+            return {
+                "id" : int(article.get('id', 0)),
+                'headline': article.get('headline', 'N/A'),
+                'description': article.get('summary', 'N/A'),
+                'url': article.get('url', ''),
+                'source': article.get('source', 'Unknown'),
+                'published_at': datetime.fromtimestamp(article.get('datetime', 0)).strftime("%Y-%m-%dT%H:%M:%S"),
+                'category': article.get('category', 'N/A'),
+                'company': article.get('related', 'N/A'),
+            }
+        except Exception as e:
+            self.logger.error(f"Error parsing article: {e}")
+            return {}
+    
+    def get_past_news(self, output_df: bool = False) -> pd.DataFrame | pw.Table:# 1year past news
+        current_date = date.today()
+        from_date = current_date - timedelta(days=365) 
+        all_articles = []
+        for symbol in self.symbols:
+            articles = self.finnhub_client.company_news(symbol, _from=from_date.strftime("%Y-%m-%d"), to=current_date.strftime("%Y-%m-%d"))
+            all_articles.extend(articles)
+            time.sleep(1)  # to avoid hitting rate limits
+
+        parsed_articles = [self._parse_article(article) for article in all_articles]
+
+        news_df = pd.DataFrame(parsed_articles)
+        news_df.sort_values(by='published_at', ascending=False, inplace=True)
+        # return news_table
+        if output_df:
+            return news_df
+        else:
+            news_table = pw.debug.table_from_pandas(news_df)
+            return news_table
 
 
 class GNewsConnector(BaseNewsConnector):
 
     def __init__(self,max_articles: int = 100, poll_interval: int = 300):
-        super().__init__(poll_interval=poll_interval, max_articles=max_articles)
+        super().__init__(poll_interval=poll_interval)
         
         self.base_url = "https://gnews.io/api/v4"
 
@@ -80,6 +161,7 @@ class GNewsConnector(BaseNewsConnector):
             'apikey': Settings.APIKEYS.get("GNEWS", ""),
         }
 
+        self.max_articles = max_articles
     def _fetch_articles(self) -> List[Dict[str, Any]]:
 
         try:
@@ -99,15 +181,14 @@ class GNewsConnector(BaseNewsConnector):
         source = article.get("source", {})
         article_id = article.get('id') or article.get('url', '').split('/')[-1]
         return {
-            "article_id" : str(article_id),
-            'title': article.get('title', 'N/A'),
+            "id" : str(article_id),
+            'headline': article.get('title', 'N/A'),
             'description': article.get('description', 'N/A'),
             'content': article.get('content', 'N/A'),
             'url': article.get('url', ''),
             'published_at': article.get('publishedAt', ''),
             'language': article.get('lang', 'en'),
-            'source_name': source.get('name', 'Unknown'),
-            'source_url': source.get('url', ''),
+            'source': source.get('name', 'Unknown'),
         }
     
     def get_past_news(self) -> List[Dict[str, str]]:
@@ -219,23 +300,29 @@ class AirbyteNewsConnector:
     
 if __name__ == "__main__":
 
-    output_path = "news.csv"
-
     # connector = AirbyteNewsConnector(api="GNEWS")
 
     # newsapi_table = connector.fetch_news(stream_name="top_headlines",mode='static')
-    interval = 5  # seconds
 
-    connector = GNewsConnector(max_articles=100,poll_interval=interval) #10 seconds
-    newsapi_table = pw.io.python.read(connector, schema=connector.NewsSchema,autocommit_duration_ms= interval * 1000)
+    # gnews_connector = GNewsConnector(max_articles=100,poll_interval=5) #10 seconds
+    # newsapi_table = pw.io.python.read(gnews_connector, schema=GNewsSchema,autocommit_duration_ms=  1000)
 
-    # pw.debug.compute_and_print(newsapi_table, include_id=False) # only for static mode
+    # pw.io.csv.write(table=newsapi_table,filename="outputs/gnews_data.csv")
 
-    pw.io.csv.write(table=newsapi_table,filename=output_path)
+    finn_connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
 
+
+    finnhub_table = pw.io.python.read(
+        finn_connector, 
+        schema=FinnHubNewsSchema,
+        autocommit_duration_ms=1000  # Commit every 1 second    
+    )
+    pw.io.csv.write(table=finnhub_table,filename="outputs/finnhub_news.csv")
     pw.run()
 
-        
+    # connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
+    # past_news = connector.get_past_news(output_df = True)
+    # past_news.to_csv("outputs/past_finnhub_news.csv", index=True)
 
     
             
