@@ -14,13 +14,13 @@ import os
 class YFinanceProducer:
     """YFinance to Redpanda producer."""
     
-    def __init__(self, tickers: List[str], topic: str, config: Dict[str, Any], logger):
-        self.tickers = tickers
+    def __init__(self, logger, topic: str, producer_config: Dict[str, Any], tickers: List[str]):
         self.logger = logger
         self.topic = topic
+        self.tickers = tickers
         
         try:
-            self.producer = Producer(config)
+            self.producer = Producer(producer_config)
             self.logger.info("✓ Initialization: Redpanda producer created")
         except Exception as e:
             self.logger.error(f"✗ Failed Initialization of producer: {e}")
