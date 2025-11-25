@@ -10,6 +10,7 @@ import yfinance as yf
 from dotenv import load_dotenv
 import os
 
+#TODO FOR FAZIL: CHANGE ALL DOTENV KEYS TO SETTINGS
 
 class YFinanceProducer:
     """YFinance to Redpanda producer."""
@@ -131,7 +132,7 @@ if __name__ == "__main__":
         tickers=tickers,
         logger=logger,
         topic=os.getenv("REDPANDA_STOCK_TOPIC"),
-        config={
+        producer_config={
             "bootstrap.servers": os.getenv("REDPANDA_BROKER"),
             "security.protocol": os.getenv("REDPANDA_SECURITY_PROTOCOL"),
             "sasl.mechanism": os.getenv("REDPANDA_SASL_MECHANISM"),

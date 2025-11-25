@@ -9,6 +9,8 @@ import finnhub
 import os
 from dotenv import load_dotenv
 
+#TODO FOR FAZIL: CHANGE ALL DOTENV KEYS TO SETTINGS
+
 class FinnHubNewsProducer:
     def __init__(self, logger, topic: str, producer_config: Dict[str, Any], 
                  tickers: List[str], poll_interval: int = 120, lookback_days: int = 1,

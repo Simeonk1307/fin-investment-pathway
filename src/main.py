@@ -1,11 +1,14 @@
 import pathway as pw
 from dotenv import load_dotenv
 from src.schemas.stock_schema import YFinanceSchema
+from src.utils.reducers import stddev, range_calc
 import os
 import time
 import math
 
 load_dotenv()
+
+# TODO FOR FAZIL: CHANGE ALL DOTENV KEYS TO SETTINGS
 
 rdkafka_settings = {
     "bootstrap.servers": os.getenv("REDPANDA_BROKER"),
@@ -18,18 +21,6 @@ rdkafka_settings = {
 }
 
 # =====================================================
-# 1. HELPER FUNCTION
-# =====================================================
-def calculate_stddev(prices_list) -> float:
-    """Calculate standard deviation from a list of prices."""
-    if not prices_list or len(prices_list) < 2:
-        return 0.0
-    
-    mean = sum(prices_list) / len(prices_list)
-    variance = sum((x - mean) ** 2 for x in prices_list) / len(prices_list)
-    return math.sqrt(variance)
-
-# =====================================================
 # 2. READ & PREPARE DATA
 # =====================================================
 stocks = pw.io.redpanda.read(
@@ -40,7 +31,9 @@ stocks = pw.io.redpanda.read(
     autocommit_duration_ms=1000
 )
 
-stocks_with_timestamp = stocks.select(
+stocks = stocks.without(
+    pw.this.date, pw.this.change
+).with_columns(
     timestamp=pw.declare_type(
         pw.DateTimeNaive,
         pw.apply_with_type(
@@ -48,46 +41,45 @@ stocks_with_timestamp = stocks.select(
             pw.DateTimeNaive,
             pw.this.timestamp_ms
         )
-    ),
-    timestamp_ms=pw.this.timestamp_ms,
-    symbol=pw.this.symbol,
-    price=pw.this.price,
-    change_percent=pw.this.change_percent,
-    volume=pw.this.volume,
-    update_time=pw.this.update_time
+    )
 )
 
+# FOR REFERENCE: Original Schema
+#
+# class YFinanceSchema(pw.Schema):
+#     timestamp_ms: int
+#     date: str
+#     update_time:str
+#     symbol: str
+#     price: float
+#     change: float
+#     change_percent: float
+#     volume: int
+
 # =====================================================
-# 3. CURRENT STATS (Global Accumulation)
+# 3. CURRENT STATS
 # =====================================================
-current_stats = stocks_with_timestamp.groupby(pw.this.symbol).reduce(
+current_stats = stocks.groupby(pw.this.symbol).reduce(
     symbol=pw.this.symbol,
+    latest_update_time=pw.reducers.latest(pw.this.update_time),
     latest_price=pw.reducers.latest(pw.this.price),
     latest_change_percent=pw.reducers.latest(pw.this.change_percent),
-    last_update=pw.reducers.latest(pw.this.update_time),
     
-    session_high=pw.reducers.max(pw.this.price),
-    session_low=pw.reducers.min(pw.this.price),
-    session_avg=pw.reducers.avg(pw.this.price),
-    
-    # Collect prices for manual stddev
-    price_list=pw.reducers.tuple(pw.this.price),
-    
-    total_volume=pw.reducers.sum(pw.this.volume),
+    max_price=pw.reducers.max(pw.this.price),
+    min_price=pw.reducers.min(pw.this.price),
+    avg_price=pw.reducers.avg(pw.this.price),
+    std_price=stddev(pw.this.price),
+    range_price=range_calc(pw.this.price),
+
+    total_volume=pw.reducers.sum(pw.this.volume), 
 )
 
-current_stats = current_stats.with_columns(
-    # ✅ FIX 1: Use apply_with_type
-    session_stddev=pw.apply_with_type(
-        calculate_stddev, float, pw.this.price_list
-    ),
-    price_range=pw.this.session_high - pw.this.session_low,
-)
+pw.io.csv.write(current_stats, "outputs/current_stock_stats.csv")
 
 # =====================================================
 # 4. TIME WINDOWS (5 MIN)
 # =====================================================
-stats_5min = stocks_with_timestamp.windowby(
+stats_5min = stocks.windowby(
     pw.this.timestamp,
     window=pw.temporal.sliding(
         hop=pw.Duration("10s"),
@@ -100,20 +92,13 @@ stats_5min = stocks_with_timestamp.windowby(
     high_5min=pw.reducers.max(pw.this.price),
     low_5min=pw.reducers.min(pw.this.price),
     volume_5min=pw.reducers.sum(pw.this.volume),
-    prices_5min=pw.reducers.tuple(pw.this.price), # For stddev
-)
-
-stats_5min = stats_5min.with_columns(
-    # ✅ FIX 1: Use apply_with_type
-    volatility_5min=pw.apply_with_type(
-        calculate_stddev, float, pw.this.prices_5min
-    )
+    volatility_5min=stddev(pw.this.price)
 )
 
 # =====================================================
 # 5. TIME WINDOWS (15 MIN)
 # =====================================================
-stats_15min = stocks_with_timestamp.windowby(
+stats_15min = stocks.windowby(
     pw.this.timestamp,
     window=pw.temporal.sliding(
         hop=pw.Duration("30s"),
@@ -123,21 +108,16 @@ stats_15min = stocks_with_timestamp.windowby(
 ).groupby(pw.this.symbol).reduce(
     symbol=pw.this.symbol,
     ma_15min=pw.reducers.avg(pw.this.price),
-    prices_15min=pw.reducers.tuple(pw.this.price),
-)
-
-stats_15min = stats_15min.with_columns(
-    # ✅ FIX 1: Use apply_with_type
-    volatility_15min=pw.apply_with_type(
-        calculate_stddev, float, pw.this.prices_15min
-    )
+    high_15min=pw.reducers.max(pw.this.price),
+    low_15min=pw.reducers.min(pw.this.price),
+    volume_15min=pw.reducers.sum(pw.this.volume),
+    volatility_15min=stddev(pw.this.price),
 )
 
 # =====================================================
 # 6. JOIN TIMEFRAMES
 # =====================================================
 
-# Join 5min
 indicators = current_stats.join_left(
     stats_5min, pw.left.symbol == pw.right.symbol
 ).select(
@@ -145,18 +125,18 @@ indicators = current_stats.join_left(
     ma_5min=pw.coalesce(pw.right.ma_5min, pw.left.latest_price),
     high_5min=pw.coalesce(pw.right.high_5min, pw.left.latest_price),
     low_5min=pw.coalesce(pw.right.low_5min, pw.left.latest_price),
-    # ✅ FIX 2: Use 0.0 (float) for float columns
-    volatility_5min=pw.coalesce(pw.right.volatility_5min, 0.0),
-    # ✅ FIX 3: Use 0 (int) for int columns
     volume_5min=pw.coalesce(pw.right.volume_5min, 0),
+    volatility_5min=pw.coalesce(pw.right.volatility_5min, 0.0),
 )
 
-# Join 15min
 indicators = indicators.join_left(
     stats_15min, pw.left.symbol == pw.right.symbol
 ).select(
     *pw.left,
     ma_15min=pw.coalesce(pw.right.ma_15min, pw.left.latest_price),
+    high_15min=pw.coalesce(pw.right.high_15min, pw.left.latest_price),
+    low_15min=pw.coalesce(pw.right.low_15min, pw.left.latest_price),
+    volume_15min=pw.coalesce(pw.right.volume_15min, 0),
     volatility_15min=pw.coalesce(pw.right.volatility_15min, 0.0),
 )
 
@@ -180,7 +160,7 @@ final = indicators.with_columns(
     # Volatility Coefficient
     volatility_coef=pw.apply(
         lambda std, avg: (std / avg * 100) if avg > 0 else 0.0,
-        pw.this.session_stddev, pw.this.session_avg
+        pw.this.std_price, pw.this.avg_price
     ),
 )
 
@@ -190,7 +170,7 @@ final = final.with_columns(
         lambda pos_pct, change: min(100.0, max(0.0, 50.0 + (pos_pct - 50.0) * 0.5 + change)),
         pw.apply(
             lambda p, h, l: ((p - l) / (h - l) * 100.0) if h != l else 50.0,
-            pw.this.latest_price, pw.this.session_high, pw.this.session_low
+            pw.this.latest_price, pw.this.max_price, pw.this.min_price
         ),
         pw.this.latest_change_percent
     )
@@ -223,8 +203,8 @@ final = final.with_columns(
 # =====================================================
 output = final.select(
     symbol=pw.this.symbol,
-    time=pw.this.last_update,
-    price=pw.this.latest_price,
+    latest_update_time=pw.this.latest_update_time,
+    latest_price=pw.this.latest_price,
     
     ma_5min=pw.this.ma_5min,
     ma_15min=pw.this.ma_15min,
@@ -236,17 +216,13 @@ output = final.select(
     rsi=pw.this.rsi,
     volatility=pw.this.volatility_coef,
     
-    signal=pw.this.signal,
-    risk_level=pw.this.risk_level
+    simple_signal=pw.this.signal,
+    simple_risk_level=pw.this.risk_level
 )
 
-pw.io.jsonlines.write(output, "outputs/stock_indicators.jsonl")
 pw.io.csv.write(output, "outputs/stock_indicators.csv")
 
 print("📊 Pipeline Running Successfully")
 print("--------------------------------")
-print("1. Manual StdDev using apply_with_type")
-print("2. Type-safe coalescing (float/float)")
-print("3. Full Indicator Set")
 
 pw.run()
