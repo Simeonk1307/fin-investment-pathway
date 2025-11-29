@@ -2,3 +2,6 @@ pathway
 yfinance
 pandas
 numpy
+dotenv
+pathlib
+finnhub-python

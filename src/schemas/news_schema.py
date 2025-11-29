@@ -1,12 +1,23 @@
 import pathway as pw
 
-class NewsSchema(pw.Schema):
-        article_id: str
-        title: str
+class FinnHubNewsSchema(pw.Schema):
+        id: int
+        headline: str
+        description: str
+        url: str
+        source: str
+        published_at: str
+        category: str
+        company: str
+
+
+
+class GNewsSchema(pw.Schema):
+        id: str
+        headline: str
         description: str
         content: str
         url: str
         published_at: str
         language: str
-        source_name: str
-        source_url: str
+        source: str

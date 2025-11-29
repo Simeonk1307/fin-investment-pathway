@@ -1,9 +1,9 @@
 import pathway as pw
 
 class YFinanceSchema(pw.Schema):
-    update_time:str
-    timestamp: pw.DateTimeNaive
+    timestamp_ms: int
     date: str
+    update_time:str
     symbol: str
     price: float
     change: float
