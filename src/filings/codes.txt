@@ -1,4 +1,0 @@
-~/kafka/bin/zookeeper-server-start.sh ~/kafka/config/zookeeper.properties
-~/kafka/bin/kafka-server-start.sh ~/kafka/config/server.properties
-python producer.py
-pyhton consumer.py
