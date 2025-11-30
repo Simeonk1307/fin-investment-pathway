@@ -3,6 +3,7 @@ import time
 import threading
 import datetime
 import re
+import uuid
 from typing import List, Dict, Any, Optional
 from confluent_kafka import Producer
 import feedparser
@@ -16,6 +17,7 @@ class SecFilingsProducer:
     """
     SEC EDGAR RSS to Redpanda producer.
     Follows Unified Log architecture: Writes to specific partition (Default: 2).
+    Implements Bronze Layer Schema (Standardized Envelope).
     """
     
     def __init__(self, logger, topic: str, producer_config: Dict[str, Any], 
@@ -37,7 +39,8 @@ class SecFilingsProducer:
             self.logger.error(f"Failed to create Redpanda producer: {e}")
             raise
 
-        self.rss_url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=&company=&dateb=&owner=include&start=0&count=40&output=atom"
+        # Changed to 'exclude' ownership reports to reduce noise and focus on 8-K/10-K
+        self.rss_url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=&company=&dateb=&owner=exclude&start=0&count=40&output=atom"
         self.seen_links: set[str] = set()
         
         # Thread-safe state
@@ -66,7 +69,7 @@ class SecFilingsProducer:
         return match.group(1) if match else "UNKNOWN"
 
     def _parse_entry(self, entry: Any) -> Dict[str, Any]:
-        """Parses a single RSS entry."""
+        """Parses a single RSS entry into a raw data dictionary."""
         full_title = entry.title
         # Logic to split "8-K - Apple Inc. [AAPL]"
         if " - " in full_title:
@@ -86,6 +89,7 @@ class SecFilingsProducer:
         except:
             timestamp_ms = int(time.time() * 1000)
 
+        # This is the "Specific" data for filings
         return {
             "source": "sec_edgar",
             "ticker": ticker,
@@ -95,6 +99,30 @@ class SecFilingsProducer:
             "link": entry.link,
             "timestamp_ms": timestamp_ms,
             "date": datetime.datetime.fromtimestamp(timestamp_ms/1000).strftime("%Y-%m-%d"),
+        }
+
+        #Wraps data in the Bronze Envelope
+    def _create_bronze_record(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Wraps the specific data into the Standard Bronze Layer Schema.
+        Puts the actual data into 'raw_payload' as a JSON Object.
+        """
+        # Current time (when we ingested it)
+        current_time_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        # Event time (when it happened)
+        event_time_iso = datetime.datetime.fromtimestamp(
+            data["timestamp_ms"]/1000, datetime.timezone.utc
+        ).isoformat()
+
+        return {
+            "event_id": str(uuid.uuid4()),          # Unique ID
+            "source_type": "filings",               # Identifies stream
+            "ticker": data["ticker"],               # Main join key
+            "event_ts": event_time_iso,             # When it happened
+            "ingest_ts": current_time_iso,          # When we saw it
+            "raw_payload": data,                    # DATA GOES HERE (As Dict/JSON)
+            "schema_version": 1                     # Version control
         }
 
     def run(self):
@@ -131,20 +159,26 @@ class SecFilingsProducer:
                     if not self._running.is_set(): break
                     
                     if entry.link not in self.seen_links:
-                        data = self._parse_entry(entry)
+                        # 1. Parse the specific filing data
+                        specific_data = self._parse_entry(entry)
                         
-                        # Produce to Redpanda
-                        # KEY CHANGE: explicitly using partition=self.target_partition
+                        # 2. Wrap it in the Bronze Layer Schema
+                        bronze_record = self._create_bronze_record(specific_data)
+                        
+                        # 3. Produce the Standardized Record to Redpanda
                         self.producer.produce(
                             topic=self.topic,
-                            key=data["ticker"].encode('utf-8'),
-                            value=json.dumps(data).encode('utf-8'),
+                            key=specific_data["ticker"].encode('utf-8'),
+                            
+                            # Send the whole Bronze Record as the message
+                            value=json.dumps(bronze_record).encode('utf-8'), 
+                            
                             partition=self.target_partition, 
                             callback=self._delivery_callback
                         )
                         self.producer.poll(0)
                         
-                        self.logger.info(f"✓ Sent: [{data['ticker']}] {data['form_type']}")
+                        self.logger.info(f"✓ Sent: [{specific_data['ticker']}] {specific_data['form_type']}")
                         self.seen_links.add(entry.link)
                         new_count += 1
                 
@@ -202,7 +236,7 @@ if __name__ == "__main__":
     )
     
     logger.info("SEC Filings -> Redpanda Producer starting...")
-    logger.info(f"Target: Topic '{topic_name}' @ Partition 2")
+    logger.info(f"Target: Topic '{topic_name}' @ Partition 2 (Bronze Schema)")
     logger.info("=" * 40)
     
     producer.run()
