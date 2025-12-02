@@ -45,7 +45,6 @@ with_status = parsed.select(
 )
 
 valid = with_status.filter(pw.this.success == 1)
-
 valid = valid.select(
     source    = pw.this.data["source"],
     ticker    = pw.this.data["ticker"],
@@ -59,7 +58,6 @@ valid = valid.select(
 
 
 failed = with_status.filter(pw.this.success == 0)
-
 failed = failed.select(
     error=pw.this.error,
     raw_data=pw.this.raw,
