@@ -63,6 +63,7 @@ class BaseProducer:
 
         try:
             while self._running:
+                self.producer.flush()
                 time.sleep(0.01)
         except KeyboardInterrupt:
             self.logger.warning("Stopping on KeyboardInterrupt...")
