@@ -30,8 +30,7 @@ raw = pw.io.redpanda.read(
 )
 
 safe_parse_filings = create_schema_parser(
-    SecFilingsSchema,
-    field_mapping={"ticker": "id"}
+    SecFilingsSchema
 )
 
 parsed = raw.select(
@@ -48,17 +47,16 @@ with_status = parsed.select(
 valid = with_status.filter(pw.this.success == 1)
 
 valid = valid.select(
-    ticker=cast_to_str(pw.this.data["ticker"]),
-    price=cast_to_float(pw.this.data["price"]),
-    time=cast_to_int(pw.this.data["time"]),
-    exchange=cast_to_str(pw.this.data["exchange"]),
-    quote_type=cast_to_int(pw.this.data["quote_type"]),
-    market_hours=cast_to_int(pw.this.data["market_hours"]),
-    change_percent=cast_to_float(pw.this.data["change_percent"]),
-    day_volume=cast_to_int(pw.this.data["day_volume"]),
-    change=cast_to_float(pw.this.data["change"]),
-    price_hint=cast_to_int(pw.this.data["price_hint"]),
+    source    = pw.this.data["source"],
+    ticker    = pw.this.data["ticker"],
+    company   = pw.this.data["company"],
+    form_type = pw.this.data["form_type"],
+    headline  = pw.this.data["headline"],
+    link      = pw.this.data["link"],
+    time_ms   = pw.cast_to_int(pw.this.data["time_ms"]),
+    date      = pw.this.data["date"],
 )
+
 
 failed = with_status.filter(pw.this.success == 0)
 
@@ -67,18 +65,17 @@ failed = failed.select(
     raw_data=pw.this.raw,
 )
 
-deduped = valid.groupby(pw.this.ticker, pw.this.time).reduce(
-    ticker=pw.reducers.earliest(pw.this.ticker),
-    price=pw.reducers.earliest(pw.this.price),
-    time=pw.reducers.earliest(pw.this.time),
-    exchange=pw.reducers.earliest(pw.this.exchange),
-    quote_type=pw.reducers.earliest(pw.this.quote_type),
-    market_hours=pw.reducers.earliest(pw.this.market_hours),
-    change_percent=pw.reducers.earliest(pw.this.change_percent),
-    day_volume=pw.reducers.earliest(pw.this.day_volume),
-    change=pw.reducers.earliest(pw.this.change),
-    price_hint=pw.reducers.earliest(pw.this.price_hint),
+deduped = valid.groupby(pw.this.ticker, pw.this.time_ms).reduce(
+    source      = pw.reducers.earliest(pw.this.source),
+    ticker      = pw.reducers.earliest(pw.this.ticker),
+    company     = pw.reducers.earliest(pw.this.company),
+    form_type   = pw.reducers.earliest(pw.this.form_type),
+    headline    = pw.reducers.earliest(pw.this.headline),
+    link        = pw.reducers.earliest(pw.this.link),
+    time_ms     = pw.reducers.earliest(pw.this.time_ms),
+    date        = pw.reducers.earliest(pw.this.date),
 )
+
 
 
 pw.io.kafka.write(
