@@ -302,20 +302,20 @@ if __name__ == "__main__":
 
     # pw.io.csv.write(table=newsapi_table,filename="outputs/gnews_data.csv")
 
-    finn_connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
+    # finn_connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
 
 
-    finnhub_table = pw.io.python.read(
-        finn_connector, 
-        schema=FinnHubNewsSchema,
-        autocommit_duration_ms=1000  # Commit every 1 second    
-    )
-    pw.io.csv.write(table=finnhub_table,filename="outputs/finnhub_news.csv")
-    pw.run()
+    # finnhub_table = pw.io.python.read(
+    #     finn_connector, 
+    #     schema=FinnHubNewsSchema,
+    #     autocommit_duration_ms=1000  # Commit every 1 second    
+    # )
+    # pw.io.csv.write(table=finnhub_table,filename="outputs/finnhub_news.csv")
+    # pw.run()
 
-    # connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
-    # past_news = connector.get_past_news(output_df = True)
-    # past_news.to_csv("outputs/past_finnhub_news.csv", index=True)
+    connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
+    past_news = connector.get_past_news(output_df = True)
+    past_news.to_csv("outputs/past_finnhub_news.csv", index=True)
 
     
             

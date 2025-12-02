@@ -1,7 +1,9 @@
+from dotenv import load_dotenv
 import os, json, time, datetime, logging, finnhub
 from typing import List, Dict, Optional
 from src.utils.producers.base_producer import BaseProducer
 
+load_dotenv()
 
 class FinnHubNewsProducer(BaseProducer):
     def __init__(self, logger: logging.Logger, topic: str, producer_config: Dict,
