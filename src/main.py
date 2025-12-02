@@ -1,6 +1,6 @@
 import pathway as pw
 from dotenv import load_dotenv
-from src.schemas.stock_schema import YFinanceSchema
+from src.schemas.silver.stocks_schema import YFinanceEquitySchema
 from src.utils.reducers import stddev, range_calc
 import os
 import time
@@ -25,8 +25,8 @@ rdkafka_settings = {
 # =====================================================
 stocks = pw.io.redpanda.read(
     rdkafka_settings=rdkafka_settings,
-    topic=os.getenv("REDPANDA_STOCK_TOPIC"),
-    schema=YFinanceSchema,
+    topic=os.getenv("REDPANDA_EQUITY_TOPIC"),
+    schema=YFinanceEquitySchema,
     format="json",
     autocommit_duration_ms=1000
 )
