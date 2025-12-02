@@ -1,31 +1,73 @@
-import json, os, datetime, re, logging, time
-from typing import Dict, Any, Optional
+import json
+import time
+import threading
+import datetime
+import re
+from typing import List, Dict, Any, Optional
+from confluent_kafka import Producer
 import feedparser
+from ..logger_config import get_module_logger
+import os
 from dotenv import load_dotenv
-from src.utils.producers.base_producer import BaseProducer
 
-load_dotenv()
 # TODO FOR FAZIL: CHANGE ALL DOTENV KEYS TO SETTINGS
 
-class SecFilingsProducer(BaseProducer):
-    def __init__(self, logger: logging.Logger, topic: str, producer_config: Dict[str, Any], 
-                poll_interval: int = 60, user_agent: Optional[str] = None
-    ):
+class SecFilingsProducer:
+    """
+    SEC EDGAR RSS to Redpanda producer.
+    Outputs data matching the SecFilingsSchema directly to the target partition.
+    """
+    
+    def __init__(self, logger, topic: str, producer_config: Dict[str, Any], 
+                 target_partition: int = 2, poll_interval: int = 60, 
+                 user_agent: Optional[str] = None):
         
-        super().__init__(logger=logger, topic=topic, producer_config=producer_config)
+        self.logger = logger
+        self.topic = topic
+        self.target_partition = target_partition
         self.poll_interval = poll_interval
+        
         self.headers = {'User-Agent': user_agent or os.getenv("SEC_USER_AGENT", "StudentProject contact@example.com")}
+        
+        try:
+            self.producer = Producer(producer_config)
+            self.logger.info(f"Redpanda producer created (Target Partition: {self.target_partition})")
+        except Exception as e:
+            self.logger.error(f"Failed to create Redpanda producer: {e}")
+            raise
+
         self.rss_url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=&company=&dateb=&owner=exclude&start=0&count=40&output=atom"
-        self.seen_links = set()
+        self.seen_links: set[str] = set()
+        
+        self._running = threading.Event()
+        self._running.set()
+        self._stats_lock = threading.Lock()
+        self.stats = {"sent": 0, "errors": 0}
+
+    def _delivery_callback(self, err, msg):
+        with self._stats_lock:
+            if err:
+                self.stats["errors"] += 1
+                self.logger.error(f"Delivery failed: {err}")
+            else:
+                self.stats["sent"] += 1
+
+    def get_stats(self) -> Dict[str, int]:
+        with self._stats_lock:
+            return self.stats.copy()
 
     def _extract_ticker(self, title: str) -> str:
-        """Extracts ticker from SEC title format: 'Company Name [TICKER]'"""
         match = re.search(r'\[([A-Z]+)\]', title)
         return match.group(1) if match else "UNKNOWN"
 
-    def _parse(self, entry: Any) -> Dict[str, Any]:
-        """Parses a single RSS entry into a raw data dictionary."""
+    def _parse_to_schema(self, entry: Any) -> Dict[str, Any]:
+        """
+        Parses RSS entry into the exact SecFilingsSchema format.
+        Schema Fields: source, ticker, company, form_type, headline, content, link, time_ms, date
+        """
         full_title = entry.title
+        
+        # Split Title
         if " - " in full_title:
             parts = full_title.split(" - ", 1)
             filing_type = parts[0]
@@ -36,50 +78,74 @@ class SecFilingsProducer(BaseProducer):
 
         ticker = self._extract_ticker(company_info)
         
+        # Handle Time
         try:
             published_dt = datetime.datetime(*entry.updated_parsed[:6])
             timestamp_ms = int(published_dt.timestamp() * 1000)
         except:
             timestamp_ms = int(time.time() * 1000)
 
+        # Handle Content (Summary from RSS)
+        content_text = ""
+        if hasattr(entry, 'summary'):
+            content_text = entry.summary
+        
+        # ---------------------------------------------------------
+        # MAPPING TO YOUR SCHEMA
+        # ---------------------------------------------------------
         return {
             "source": "sec_edgar",
             "ticker": ticker,
             "company": company_info.replace(f"[{ticker}]", "").strip(),
             "form_type": filing_type,
             "headline": full_title,
+            "content": content_text,  # Maps to 'content' in schema
             "link": entry.link,
-            "timestamp_ms": timestamp_ms,
+            "time_ms": timestamp_ms,  # Renamed from timestamp_ms to time_ms to match schema
             "date": datetime.datetime.fromtimestamp(timestamp_ms/1000).strftime("%Y-%m-%d"),
         }
 
-    def _run_loop(self):
-        retries = 0
+    def run(self):
+        fetch_thread = threading.Thread(target=self._feed_loop, daemon=True)
+        fetch_thread.start()
         
+        try:
+            while self._running.is_set():
+                time.sleep(1)
+        except KeyboardInterrupt:
+            self.logger.warning("!! Stopping on KeyboardInterrupt... !!")
+            self._running.clear()
+            time.sleep(2)
+        
+        self.producer.flush(10)
+        stats = self.get_stats()
+        self.logger.info(f"Producer finished. Sent: {stats['sent']}, Errors: {stats['errors']}")
+
+    def _feed_loop(self):
         while self._running.is_set():
             try:
                 self.logger.debug(f"Fetching SEC Feed...")
                 feed = feedparser.parse(self.rss_url, request_headers=self.headers)
                 
                 new_count = 0
-                
-                # Process oldest first to maintain timeline natural order
                 for entry in reversed(feed.entries):
-                    if not self._running: 
-                        break
+                    if not self._running.is_set(): break
                     
                     if entry.link not in self.seen_links:
-                        data = self._parse(entry)
-
+                        # 1. Parse data into Schema format
+                        schema_data = self._parse_to_schema(entry)
+                        
+                        # 2. Send JSON directly
                         self.producer.produce(
                             topic=self.topic,
-                            key=data["ticker"].encode('utf-8'),
-                            value=json.dumps(data).encode('utf-8'), 
-                            callback=self._delivery
+                            key=schema_data["ticker"].encode('utf-8'),
+                            value=json.dumps(schema_data).encode('utf-8'), 
+                            partition=self.target_partition, 
+                            callback=self._delivery_callback
                         )
                         self.producer.poll(0)
                         
-                        self.logger.info(f"✓ Sent: [{data['ticker']}] {data['form_type']}")
+                        self.logger.info(f"✓ Sent: [{schema_data['ticker']}] {schema_data['form_type']}")
                         self.seen_links.add(entry.link)
                         new_count += 1
                 
@@ -87,12 +153,51 @@ class SecFilingsProducer(BaseProducer):
                     self.logger.info(f"Processed {new_count} new filings.")
                 
                 retries = 0
-                
             except Exception as e:
                 retries += 1
-                self._count_error(self.misc_errors)
                 self.logger.error(f"Fetch error: {e}")
                 time.sleep(min(10 * retries, 60))
 
-            if self._running:
+            if self._running.is_set():
                 time.sleep(self.poll_interval)
+
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    
+    load_dotenv(os.path.join("src", ".env"))
+    
+    logger = get_module_logger("SecFilingsProducer")
+
+    sec_protocol = os.getenv("REDPANDA_SECURITY_PROTOCOL") or "PLAINTEXT"
+
+    redpanda_producer_config = {
+        "bootstrap.servers": os.getenv("REDPANDA_BROKER", "localhost:9092"),
+        "security.protocol": sec_protocol,
+        "acks": "all",
+        "retries": 5
+    }
+
+    if sec_protocol != "PLAINTEXT":
+        redpanda_producer_config.update({
+            "sasl.mechanism": os.getenv("REDPANDA_SASL_MECHANISM", "SCRAM-SHA-256"),
+            "sasl.username": os.getenv("REDPANDA_USERNAME"),
+            "sasl.password": os.getenv("REDPANDA_PASSWORD"),
+        })
+
+    topic_name = os.getenv("REDPANDA_EVENTS_TOPIC", "raw_events")
+    my_user_agent = os.getenv("SEC_USER_AGENT", "MyStudentProject contact@example.edu")
+
+    producer = SecFilingsProducer(
+        logger=logger,
+        topic=topic_name,
+        producer_config=redpanda_producer_config,
+        target_partition=2,
+        poll_interval=60,
+        user_agent=my_user_agent
+    )
+    
+    logger.info("SEC Filings -> Redpanda Producer starting...")
+    logger.info(f"Target: Topic '{topic_name}' @ Partition 2 (SecFilingsSchema)")
+    
+    producer.run()
