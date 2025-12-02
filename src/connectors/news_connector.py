@@ -1,21 +1,13 @@
-import os
-import pathway as pw
-import requests
-from datetime import date, datetime, timedelta
-import time
+import os, requests, time, datetime, yaml, json
 from typing import Literal, Optional, Dict, Any,Callable,List
 from abc import ABC, abstractmethod
-import yaml
 from config.settings import Settings
 import pandas as pd
-
 import finnhub
-from ..schemas.news_schema import FinnHubNewsSchema,GNewsSchema
-from ..logger_config import get_module_logger
+from ..schemas.silver.news_schema import FinnHubNewsSchema,GNewsSchema
+from ..config.logger_config import get_module_logger
 
-import json
-
-
+import pathway as pw
 
 class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
 
@@ -55,7 +47,7 @@ class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
 
                         self.next(**parsed)
                 
-                self.last_fetch_time = datetime.now()
+                self.last_fetch_time = datetime.datetime.now()
 
                 self.logger.info(f"Fetched and processed {len(articles)} articles. Pausing for {self.poll_interval} seconds...")
 
@@ -113,7 +105,7 @@ class FinnHubNewsConnector(BaseNewsConnector):
                 'description': article.get('summary', 'N/A'),
                 'url': article.get('url', ''),
                 'source': article.get('source', 'Unknown'),
-                'published_at': datetime.fromtimestamp(article.get('datetime', 0)).strftime("%Y-%m-%dT%H:%M:%S"),
+                'published_at': datetime.datetime.fromtimestamp(article.get('datetime', 0)).strftime("%Y-%m-%dT%H:%M:%S"),
                 'category': article.get('category', 'N/A'),
                 'company': article.get('related', 'N/A'),
             }
@@ -122,8 +114,8 @@ class FinnHubNewsConnector(BaseNewsConnector):
             return {}
     
     def get_past_news(self, output_df: bool = False) -> pd.DataFrame | pw.Table:# 1year past news
-        current_date = date.today()
-        from_date = current_date - timedelta(days=365) 
+        current_date = datetime.date.today()
+        from_date = current_date - datetime.timedelta(days=365) 
         all_articles = []
         for symbol in self.symbols:
             articles = self.finnhub_client.company_news(symbol, _from=from_date.strftime("%Y-%m-%d"), to=current_date.strftime("%Y-%m-%d"))
@@ -156,7 +148,7 @@ class GNewsConnector(BaseNewsConnector):
             'country': 'us',
             'max': max_articles,
             'from': None,# can be set later
-            'to': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),#ISO 8601 format.
+            'to': datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),#ISO 8601 format.
             'apikey': Settings.APIKEYS.get("GNEWS", ""),
         }
 

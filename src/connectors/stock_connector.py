@@ -1,12 +1,10 @@
-import pathway as pw
-import asyncio
+import asyncio, datetime, os
 from typing import List, Dict, Any
-import datetime
-import os
 import yfinance as yf
+from ..schemas.silver.stocks_schema import YFinanceEquitySchema
+from ..config.logger_config import get_module_logger
 
-from ..logger_config import get_module_logger
-from ..schemas.stock_schema import YFinanceSchema
+import pathway as pw
 
 class YFinanceStockConnector(pw.io.python.ConnectorSubject):
     # For more details refer to: https://ranaroussi.github.io/yfinance/reference/yfinance.websocket.html 
@@ -54,18 +52,19 @@ class YFinanceStockConnector(pw.io.python.ConnectorSubject):
     
     def _parse_stock_data(self, msg: Dict) -> Dict[str, Any]:
         try:
-            timestamp_ms = int(msg.get("time", datetime.datetime.now().timestamp() * 1000 ))
-            dt = pw.DateTimeNaive.fromtimestamp(timestamp_ms/1000)
+            time_ms = int(msg.get("time", datetime.datetime.now().timestamp() * 1000))
+            dt = datetime.datetime.fromtimestamp(time_ms / 1000)
 
-            return {
-                "timestamp_ms": timestamp_ms,
-                "date": dt.strftime("%d-%m-%Y"),
-                "update_time": dt.strftime("%H:%M:%S"),
-                "symbol": msg.get("id", ""),
-                "volume": int(msg.get("day_volume", 0)),
-                "price": float(msg.get("price", 0.0)),
-                "change": float(msg.get("change", 0.0)),
-                "change_percent": float(msg.get("change_percent", 0.0)),
+            data = {
+                "ticker": msg.get("id", ""),
+                "price": msg.get("price", 0.0),
+                "time_ms": time_ms,
+                "time_str": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "exchange": msg.get("exchange", ""),
+                "quote_type": msg.get("quote_type", 0),
+                "change_percent": msg.get("change_percent", 0.0),
+                "change": msg.get("change", 0.0),
+                "price_hint": msg.get("price_hint", 0),
             }
         except Exception as e:
             self.logger.error(f"Failed to parse: {e}")
@@ -78,17 +77,17 @@ if __name__ == "__main__":
     os.makedirs(output_folder, exist_ok=True)
     output_path = "outputs/stock_data.csv"
     
-    tickers = ["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","TSLA",]
+    equity_tickers = ["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","TSLA"]
     connector = YFinanceStockConnector(
-        tickers=tickers[:5],
+        tickers=equity_tickers[:5],
         logger_name="YFinanceStockConnector"
     )
 
     stock_table = pw.io.python.read(
         subject=connector, 
-        schema=YFinanceSchema,
+        schema=YFinanceEquitySchema,
         autocommit_duration_ms=1000,
-        name="YFinanceStockConnector",
+        name="YFinanceEquityConnector",
         max_backlog_size=1000
     )
     
