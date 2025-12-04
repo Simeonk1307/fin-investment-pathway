@@ -1,7 +1,7 @@
 import pathway as pw
 import os
 from dotenv import load_dotenv
-from src.schemas.silver_filings_schema import SecFilingsSchema
+from src.schemas.silver_filings_schema import SecFilingsSchema, sec_filings_mapping
 from src.utils.common import common_config, profiles
 from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int, unpack_from_schema, dedupe_from_schema
 
@@ -30,15 +30,16 @@ raw = pw.io.redpanda.read(
 )
 
 safe_parse_filings = create_schema_parser(
-    SecFilingsSchema
+    schema_class=SecFilingsSchema,
+    field_mapping=sec_filings_mapping
 )
 
-try:
-    parsed = raw.select(
+# try:
+parsed = raw.select(
         result=safe_parse_filings(pw.this.data)
     )
-except Exception as e:
-    raise Exception("data column not found")
+# except Exception as e:
+#     raise Exception("data column not found")
 
 with_status = parsed.select(
     success=cast_to_int(pw.this.result["success"]),

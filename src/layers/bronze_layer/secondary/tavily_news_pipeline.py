@@ -1,6 +1,10 @@
 import time
-from kafka_producer import send_to_kafka
-from tavily_websearch_producer import scrape_tavily_web
+from src.utils.producers.socials_producer import send_to_kafka
+from src.utils.websearch.tavily_news import scrape_tavily_web
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 EQUITY_TICKERS = ["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","TSLA"]
 
@@ -12,7 +16,7 @@ def run_once():
         # 3. Tavily Web Search (News + Blogs + Analysis)
         tavily_web_results = scrape_tavily_web(company=ticker.lower())
         for event in tavily_web_results:
-            send_to_kafka(event)
+            send_to_kafka(event, os.getenv("REDPANDA_NEWS_TOPIC"))
 
         print(f"Completed tickers batch for {ticker}.\n")
         time.sleep(2)

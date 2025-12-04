@@ -1,7 +1,7 @@
 import pathway as pw
 import os
 from dotenv import load_dotenv
-from src.schemas.silver_stocks_schema import YFinanceEquitySchema
+from src.schemas.silver_stocks_schema import YFinanceEquitySchema, yfinance_equity_mapping
 from src.schemas.bronze_schema import BronzeSchema
 from src.utils.common import common_config, profiles
 from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int, unpack_from_schema, dedupe_from_schema
@@ -34,7 +34,7 @@ raw = raw.filter(pw.this.source == "yfinance")
 
 safe_parse_stock = create_schema_parser(
     YFinanceEquitySchema,
-    field_mapping={"symbol": "id"}
+    field_mapping=yfinance_equity_mapping
 )
 
 parsed = raw.select(

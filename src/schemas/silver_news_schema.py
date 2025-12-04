@@ -11,8 +11,13 @@ class FinnHubNewsSchema(pw.Schema):
         summary: str
         url: str
 
+finnhub_news_mapping = {
+        "news_id": "id"
+}
 
 
+
+# DID NOT IMPLEMENT BECAUSE THE PLAN WAS NOT THAT GOOD
 # class GNewsSchema(pw.Schema):
 #         id: str
 #         headline: str

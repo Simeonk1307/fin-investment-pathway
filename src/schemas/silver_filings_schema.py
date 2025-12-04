@@ -10,3 +10,5 @@ class SecFilingsSchema(pw.Schema):
     link: str
     time_ms: int
     date: str
+
+sec_filings_mapping = {}

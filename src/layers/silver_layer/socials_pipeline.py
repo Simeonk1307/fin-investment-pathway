@@ -2,27 +2,29 @@ import pathway as pw
 import os
 from dotenv import load_dotenv
 from src.schemas.bronze_schema import BronzeSchema
-from src.schemas.silver_stocks_schema import FinnHubStockSchema, finnhub_stocks_mapping
+from src.schemas.silver_socials_schema import SocialsSchema, socials_mapping
 from src.utils.common import common_config, profiles
 from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int,  unpack_from_schema, dedupe_from_schema
+from src.utils.clean_text import clean_text
 
 load_dotenv()
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
 consumer_settings = common_config | {
-    "group.id": "fn-bronze-stocks-consumer",
+    "group.id": "bronze-socials-consumer",
     "auto.offset.reset": "latest", #"latest" replace later
     "enable.auto.commit": "true",
     "auto.commit.interval.ms": "500",
 }
 
-producer_settings = common_config | profiles["high_throughput"] | {"client.id": "silver-stocks-producer"}
+producer_settings = common_config | profiles["high_throughput"] | {"client.id": "silver-socials-producer"}
 
-BRONZE_TOPIC = os.getenv("REDPANDA_BRONZE_STOCKS_TOPIC")
-SILVER_TOPIC = os.getenv("REDPANDA_SILVER_STOCKS_TOPIC")
-DLQ_TOPIC = os.getenv("REDPANDA_SILVER_STOCKS_DLQ_TOPIC")
+BRONZE_TOPIC = os.getenv("REDPANDA_BRONZE_SOCIALS_TOPIC")
+SILVER_TOPIC = os.getenv("REDPANDA_SILVER_SOCIALS_TOPIC")
+DLQ_TOPIC = os.getenv("REDPANDA_SILVER_SOCIALS_DLQ_TOPIC")
 
 
+#TODO CHECK IF EVRYTHING WORKS FINE
 raw = pw.io.redpanda.read(
     rdkafka_settings=consumer_settings,
     topic=BRONZE_TOPIC,
@@ -32,8 +34,8 @@ raw = pw.io.redpanda.read(
 )
 
 safe_parse_stock = create_schema_parser(
-    schema_class=FinnHubStockSchema,
-    field_mapping=finnhub_stocks_mapping
+    schema_class=SocialsSchema,
+    field_mapping=socials_mapping
 )
 
 parsed = raw.select(
@@ -50,7 +52,7 @@ with_status = parsed.select(
 valid = with_status.filter(pw.this.success == 1)
 valid = unpack_from_schema(
     table=valid, 
-    schema_class=FinnHubStockSchema, 
+    schema_class=SocialsSchema, 
     source_column="data"
 )
 
@@ -60,19 +62,29 @@ failed = failed.select(
     raw_data=pw.this.raw,
 )
 
+# TODO
 deduped = dedupe_from_schema(
     table=valid, 
-    schema_class=FinnHubStockSchema, 
-    dedupe_columns=["price","symbol", "timestamp", "volume"]
-) # look into this
+    schema_class=SocialsSchema, 
+    dedupe_columns=["source","timestamp", "company", "title"] ##
+) # look into this - ["url"] enough look into it
 
 
+# TODO shd we remove anything and check if this even works
+#Apply some cleaning here
+cleaned = deduped.with_columns(
+    title = pw.apply(clean_text, pw.this.title),
+    text = pw.apply(clean_text, pw.this.text),
+)
+
+
+# TODO
 pw.io.kafka.write(
     deduped,
     rdkafka_settings=producer_settings, 
     topic_name=SILVER_TOPIC, 
     format="json",
-    key=pw.this.symbol
+    key=pw.this.company ## is source a better idea
 )
 
 pw.io.kafka.write(

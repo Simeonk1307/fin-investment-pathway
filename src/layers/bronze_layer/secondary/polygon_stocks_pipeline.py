@@ -5,7 +5,7 @@ import pathway as pw
 from src.schemas.bronze_schema import BronzeSchema
 from src.config.logger_config import get_module_logger
 from src.utils.common import common_config, profiles
-from src.utils.connectors.polygon_stocks_subject import PolygonSubject
+from src.utils.connectors.future.polygon_stocks_subject import PolygonSubject
 
 
 # DID NOT IMPLEMENT THIS BECAUSE OF PRICING OF THE API

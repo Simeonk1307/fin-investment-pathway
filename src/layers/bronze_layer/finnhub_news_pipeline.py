@@ -1,5 +1,5 @@
-import os, json, sys
-from src.utils.producers.news_producer import FinnHubNewsProducer
+import os, json
+from src.utils.producers.finnhub_news_producer import FinnHubNewsProducer
 from dotenv import load_dotenv
 from src.config.logger_config import get_module_logger
 from src.utils.common import common_config, profiles

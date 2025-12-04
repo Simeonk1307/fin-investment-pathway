@@ -9,15 +9,19 @@ class YFinanceEquitySchema(pw.Schema):
     # market_hours: int
     # price_hint: int
 
-class FinnHubEquitySchema(pw.Schema):
+class FinnHubStockSchema(pw.Schema):
     price: int
     symbol: str
     timestamp: int
     volume: int
 
-finnhub_mapping = {
+finnhub_stocks_mapping = {
     "price": "p",
     "symbol": "s",
     "timestamp": "t",
     "volume": "v"
+}
+
+yfinance_equity_mapping = {
+    "symbol": "id"
 }
