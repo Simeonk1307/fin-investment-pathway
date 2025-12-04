@@ -1,5 +1,5 @@
 import os, json, sys
-from src.utils.producers.filings_producer import SecFilingsProducer
+from src.utils.producers.filings_producer_crawler import SecFilingsProducer
 from dotenv import load_dotenv
 from src.config.logger_config import get_module_logger
 from src.utils.common import common_config, profiles

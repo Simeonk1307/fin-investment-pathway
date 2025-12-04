@@ -11,3 +11,32 @@ spacy==3.7.2
 sentence-transformers==2.2.2
 python-dateutil==2.8.2
 requests==2.31.0
+finnhub
+
+# --- Core Kafka / Redpanda Streaming ---
+kafka-python==2.0.2
+
+# --- Web Scraping ---
+requests
+beautifulsoup4
+
+# --- Tavily API Search ---
+tavily-python
+
+# --- Text Preprocessing ---
+emoji
+
+# --- Machine Learning (FinBERT) ---
+transformers
+torch
+
+# --- Kafka Compression Codecs (Required for Redpanda) ---
+python-snappy
+lz4
+zstandard
+
+# --- HuggingFace Optimized Storage (optional but recommended) ---
+huggingface_hub[hf_xet]
+
+# --- Environment Variables (optional) ---
+python-dotenv

@@ -6,6 +6,7 @@ class SecFilingsSchema(pw.Schema):
     company: str
     form_type: str
     headline: str
+    content:str
     link: str
     time_ms: int
     date: str
