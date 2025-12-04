@@ -1,4 +1,5 @@
-from src.agents.llm_factory import LLM,InvestmentState
+from src.agents.llm_factory import LLM
+from src.agents.agent_state import AgentState
 import logging
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
@@ -10,7 +11,7 @@ class NewsAnalysisResult(BaseModel):
     reason: str = Field(..., description="Brief reason for the prediction in one line. It should be clear and specific")
 
 
-def news_agent(state:InvestmentState) -> dict:
+def news_agent(state:AgentState) -> dict:
     """
     Analyze news summary to extract key insights for investment decision-making.
     """

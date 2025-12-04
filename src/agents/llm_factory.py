@@ -1,36 +1,10 @@
-from typing import Literal,Annotated, Sequence, TypedDict
-
-from langchain_core.messages import BaseMessage, HumanMessage
+from typing import Literal
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatPerplexity
 # from langchain_huggingface import HuggingFaceChat, HuggingFaceHubChat
 from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 from langchain_groq import ChatGroq
-
-import operator
 from config.settings import settings
-
-
-class InvestmentState(TypedDict):
-    """Central state that flows through all agents"""
-    # Input data
-    ticker: str
-    market_data: dict
-    news: dict
-
-    
-    # Agent outputs
-    news_analysis: dict  # NEW: Structured news output
-    final_analysis: dict  # Final investment decision
-
-    bull_arguments: Sequence[str]
-    bear_arguments: Sequence[str]
-    
-    # Metadata
-    messages: Annotated[Sequence[BaseMessage], operator.add]
-    next_agent: str
-
-
 
 LLMProvider = Literal["openai", "gemini", "claude", "perplexity","huggingface", "groq"]
 

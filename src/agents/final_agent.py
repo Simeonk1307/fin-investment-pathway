@@ -1,4 +1,5 @@
-from src.agents.llm_factory import LLM,InvestmentState
+from src.agents.llm_factory import LLM
+from src.agents.agent_state import AgentState
 import logging
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
@@ -11,7 +12,7 @@ class AnalysisReport(BaseModel):
     reason: str = Field(..., description="Brief reason for the prediction in one line. It should be clear and specific")
 
 
-def final_agent(state:InvestmentState) -> dict:
+def final_agent(state:AgentState) -> dict:
     """
     Final agent to consolidate insights and provide final recommendation.
     """

@@ -7,7 +7,8 @@ from langchain_community.chat_models import ChatPerplexity
 import operator
 from src.agents.news_analyst import news_agent
 from src.agents.final_agent import final_agent
-from src.agents.llm_factory import get_llm, InvestmentState
+from src.agents.llm_factory import get_llm
+from src.agents.agent_state import AgentState
 from datetime import datetime
 import psutil
 from src.agents.finbert import FinBertSentimentAnalyzer
@@ -37,7 +38,7 @@ class FinnHubNewsSchema(pw.Schema):
 # ============================================================================
 # AGENT NODES
 # ============================================================================
-def data_ingestion_node(state: InvestmentState) -> InvestmentState:
+def data_ingestion_node(state: AgentState) -> AgentState:
     """
     Fetch latest data from Silver layer topics
     
@@ -74,7 +75,7 @@ def create_graph() -> StateGraph:
     Current: data_ingestion → news_analysis → END
     Future: Add more agents (market_analyst, fundamental_analyst, etc.)
     """
-    workflow = StateGraph(InvestmentState)
+    workflow = StateGraph(AgentState)
 
     workflow.add_node("data_ingestion", data_ingestion_node)
     workflow.add_node("news_analysis", news_agent)
