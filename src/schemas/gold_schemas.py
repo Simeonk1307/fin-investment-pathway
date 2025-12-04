@@ -1,6 +1,6 @@
 import pathway as pw
 
-class GoldStockIndicatorsSchema(pw.Schema):
+class StockIndicatorsSchema(pw.Schema):
     ticker: str
     latest_update_time: int
     latest_price: float

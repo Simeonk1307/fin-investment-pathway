@@ -1,7 +1,6 @@
 import pathway as pw
 
-
-class BronzeSchema(pw.Schema):
+class UnifiedSchema(pw.Schema):
     event_id: str
     source: str
     source_type: str
