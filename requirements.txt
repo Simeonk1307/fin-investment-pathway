@@ -11,6 +11,9 @@ spacy==3.7.2
 sentence-transformers==2.2.2
 python-dateutil==2.8.2
 requests==2.31.0
+confluent-kafka
+langgraph
+langchain-openai
 finnhub
 
 # --- Core Kafka / Redpanda Streaming ---
