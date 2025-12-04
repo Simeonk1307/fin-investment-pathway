@@ -8,10 +8,15 @@ from config.settings import settings
 
 LLMProvider = Literal["openai", "gemini", "claude", "perplexity","huggingface", "groq"]
 
-
+safety_model = ChatGroq(
+                model="llama-3.1-8b-instant",
+                temperature=0.7,
+                max_tokens=2048,
+                api_key=settings.llm.GROQ_API_KEY,
+            )
 
 def get_llm(
-    provider: LLMProvider = "perplexity",
+    provider: LLMProvider = "groq",
     model: str = None,
     temperature: float = 0.3,
     **kwargs

@@ -1,14 +1,14 @@
 import os, requests, time, datetime, yaml, json
 from typing import Literal, Optional, Dict, Any,Callable,List
 from abc import ABC, abstractmethod
-from config.settings import Settings
+# from config.settings import Settings
 import pandas as pd
 import finnhub
-from ..schemas.silver.news_schema import FinnHubNewsSchema,GNewsSchema
-from ..config.logger_config import get_module_logger
-
+from src.config.logger_config import get_module_logger
+from datetime import date, timedelta
 import pathway as pw
-
+import dotenv
+dotenv.load_dotenv()
 class BaseNewsConnector(pw.io.python.ConnectorSubject, ABC):
 
     def __init__(self, logger_name, poll_interval:int = 5):
@@ -68,7 +68,7 @@ class FinnHubNewsConnector(BaseNewsConnector):
 
         super().__init__(poll_interval=poll_interval, logger_name=logger_name)
 
-        self.api_key = Settings.APIKEYS.get("FINNHUB", "")
+        self.api_key = os.getenv("FINNHUB_API_KEY", "")
 
         self.finnhub_client = finnhub.Client(api_key=self.api_key)
 
@@ -115,9 +115,11 @@ class FinnHubNewsConnector(BaseNewsConnector):
     
     def get_past_news(self, output_df: bool = False) -> pd.DataFrame | pw.Table:# 1year past news
         current_date = datetime.date.today()
-        from_date = current_date - datetime.timedelta(days=365) 
+        from_date = current_date - datetime.timedelta(days=30) 
         all_articles = []
         for symbol in self.symbols:
+            # self.logger.info(f"Fetching past articles for symbol: {symbol}")
+            # self.logger.info(f"From date: {from_date}, To date: {current_date}")
             articles = self.finnhub_client.company_news(symbol, _from=from_date.strftime("%Y-%m-%d"), to=current_date.strftime("%Y-%m-%d"))
             all_articles.extend(articles)
             time.sleep(1)  # to avoid hitting rate limits
@@ -312,8 +314,8 @@ if __name__ == "__main__":
     # )
     # pw.io.csv.write(table=finnhub_table,filename="outputs/finnhub_news.csv")
     # pw.run()
-
-    connector = FinnHubNewsConnector(symbols=["AAPL","MSFT","GOOGL"],poll_interval=60,lookback_days=1) # 5 minutes
+    symbols = ["AAPL","MSFT","GOOGL","AMZN","TSLA"]#atleast 20 symbols to test rate limit
+    connector = FinnHubNewsConnector(symbols=symbols,poll_interval=60,lookback_days=1) # 5 minutes
     past_news = connector.get_past_news(output_df = True)
     past_news.to_csv("outputs/past_finnhub_news.csv", index=True)
 

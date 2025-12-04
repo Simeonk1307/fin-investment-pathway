@@ -1,4 +1,7 @@
 pathway
+# pathway[xpack-llm]
+# pathway[xpack-llm-docs]
+
 yfinance
 pandas
 numpy
@@ -14,7 +17,6 @@ requests==2.31.0
 confluent-kafka
 langgraph
 langchain-openai
-finnhub
 
 # --- Core Kafka / Redpanda Streaming ---
 kafka-python==2.0.2

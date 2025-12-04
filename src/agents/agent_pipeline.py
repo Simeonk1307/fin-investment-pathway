@@ -9,6 +9,7 @@ from src.agents.news_analyst import news_agent
 from src.agents.final_agent import final_agent
 from src.agents.llm_factory import get_llm
 from src.agents.agent_state import AgentState
+from src.agents.guard_rail import safety_guardrail_node
 from datetime import datetime
 import psutil
 from src.agents.finbert import FinBertSentimentAnalyzer
@@ -80,11 +81,13 @@ def create_graph() -> StateGraph:
     workflow.add_node("data_ingestion", data_ingestion_node)
     workflow.add_node("news_analysis", news_agent)
     workflow.add_node("final_analysis", final_agent)
+    workflow.add_node("safety_guardrail", safety_guardrail_node)
 
     workflow.set_entry_point("data_ingestion")
     workflow.add_edge("data_ingestion", "news_analysis")
     workflow.add_edge("news_analysis", "final_analysis")
-    workflow.add_edge("final_analysis", END)
+    workflow.add_edge("final_analysis", "safety_guardrail")
+    workflow.add_edge("safety_guardrail", END)
     return workflow.compile()
 
 
@@ -180,7 +183,7 @@ if __name__ == "__main__":
     print("🧪 TEST MODE - CSV Streaming")
     print("=" * 60)
     
-    csv_path = "outputs/finnhub_news.csv"
+    csv_path = "outputs/past_finnhub_news.csv"
     mode = "static"
     output_path = "outputs/"
     
