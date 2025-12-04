@@ -1,4 +1,4 @@
-import os, json, sys
+import os, json
 from dotenv import load_dotenv
 from src.config.logger_config import get_module_logger
 from src.utils.producers.stocks_producer import YFinanceStocksProducer

@@ -73,7 +73,6 @@ class SecFilingsProducer(BaseProducer):
 
                         self.producer.produce(
                             topic=self.topic,
-                            key=data["ticker"].encode('utf-8'),
                             value=json.dumps(data).encode('utf-8'), 
                             callback=self._delivery
                         )

@@ -23,8 +23,8 @@ producer = FinnHubNewsProducer(
     api_key=api_key,
     producer_config=producer_config,
 
-    poll_interval=300,
-    lookback_days=2,  
+    poll_interval=60,
+    lookback_days=7,  
 )
 
 logger.info("=" * 40)   

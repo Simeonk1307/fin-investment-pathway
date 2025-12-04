@@ -5,6 +5,7 @@ import logging
 import time
 import sys
 
+
 class BaseProducer:
     def __init__(self, logger: logging.Logger, topic: str, producer_config: Dict):
         self.logger = logger

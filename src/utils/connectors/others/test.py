@@ -1,7 +1,7 @@
 from .news_connector import GNewsConnector, AirbyteNewsConnector, FinnHubNewsConnector
 from .stock_connector import YFinanceStockConnector
 from ..schemas.stock_schema import YFinanceSchema
-from ..schemas.news_schema import FinnHubNewsSchema
+from ..schemas.silver_news_schema import FinnHubNewsSchema
 import pathway as pw
 import os
 

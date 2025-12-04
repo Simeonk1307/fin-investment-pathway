@@ -2,8 +2,10 @@ import json, time, logging
 from typing import List, Dict
 import yfinance as yf
 from src.utils.producers.base_producer import BaseProducer
+from src.utils.event_envelope import create_event_envelope
 
-class BaseStocksProducer(BaseProducer):
+
+class YFinanceStocksProducer(BaseProducer):
     def __init__(self, logger: logging.Logger, topic: str, producer_config: Dict, tickers: List[str]):
         super().__init__(logger=logger, topic=topic, producer_config=producer_config)
         self.tickers = tickers
@@ -14,10 +16,11 @@ class BaseStocksProducer(BaseProducer):
             return
 
         try:
+            data = create_event_envelope(payload= message, source="yfinance", source_type="rest") 
             self.producer.produce(
                 topic=self.topic,
-                key=message.get("id").encode(),
-                value=json.dumps(message).encode(),
+                key="yfinance",
+                value=json.dumps(data).encode(),
                 callback=self._delivery
             )
             self.producer.poll(0)
@@ -26,7 +29,6 @@ class BaseStocksProducer(BaseProducer):
             self.logger.error(f"FAILURE in _message_handler: {e}")
             self._count_error(self.misc_errors)
 
-class YFinanceStocksProducer(BaseStocksProducer):
     def _run_loop(self):
         retries = 0
         while self._running and retries < 5:

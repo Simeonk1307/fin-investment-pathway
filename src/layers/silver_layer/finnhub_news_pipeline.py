@@ -1,17 +1,17 @@
 import pathway as pw
 import os
 from dotenv import load_dotenv
-from src.schemas.silver.news_schema import FinnHubNewsSchema
+from src.schemas.silver_news_schema import FinnHubNewsSchema
 from src.utils.common import common_config, profiles
-from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int
+from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int, unpack_from_schema, dedupe_from_schema
 
 load_dotenv()
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
 consumer_settings = common_config | {
-    "group.id": "bronze-news-consumer1",  # Changed from stocks to news
+    "group.id": "bronze-news-consumer",  # Changed from stocks to news
     # "auto.offset.reset": "latest",
-    "auto.offset.reset": "earliest",
+    "auto.offset.reset": "latest",
     "enable.auto.commit": "true",
     "auto.commit.interval.ms": "500",
 }
@@ -46,16 +46,10 @@ with_status = parsed.select(
 )
 
 valid = with_status.filter(pw.this.success == 1)
-valid = valid.select(
-    category=cast_to_str(pw.this.data["category"]),
-    datetime=cast_to_int(pw.this.data["datetime"]),
-    headline=cast_to_str(pw.this.data["headline"]),
-    news_id=cast_to_int(pw.this.data["news_id"]),
-    image=cast_to_str(pw.this.data["image"]),
-    related=cast_to_str(pw.this.data["related"]),
-    source=cast_to_str(pw.this.data["source"]),
-    summary=cast_to_str(pw.this.data["summary"]),
-    url=cast_to_str(pw.this.data["url"]),
+valid = unpack_from_schema(
+    table=valid, 
+    schema_class=FinnHubNewsSchema, 
+    source_column="data"
 )
 
 failed = with_status.filter(pw.this.success == 0)
@@ -65,19 +59,13 @@ failed = failed.select(
 )
 
 # Deduplicate by news_id 
-deduped = valid.groupby(pw.this.news_id).reduce(
-    category=pw.reducers.earliest(pw.this.category),
-    datetime=pw.reducers.earliest(pw.this.datetime),
-    headline=pw.reducers.earliest(pw.this.headline),
-    news_id=pw.reducers.earliest(pw.this.news_id),
-    image=pw.reducers.earliest(pw.this.image),
-    related=pw.reducers.earliest(pw.this.related),
-    source=pw.reducers.earliest(pw.this.source),
-    summary=pw.reducers.earliest(pw.this.summary),
-    url=pw.reducers.earliest(pw.this.url),
-)
+deduped = dedupe_from_schema(
+    table=valid, 
+    schema_class=FinnHubNewsSchema, 
+    dedupe_columns=["news_id"]
+) # this is fine
 
-# Write to Silver topic with related ticker as key for partitioning
+
 pw.io.kafka.write(
     deduped,
     rdkafka_settings=producer_settings, 

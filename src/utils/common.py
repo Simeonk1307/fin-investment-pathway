@@ -38,7 +38,7 @@ profiles = {
         "acks": "1",
         "linger.ms": "100",
         "batch.num.messages": "10000",
-        "compression.type": "lz4",
+        "compression.type": "snappy",
         "enable.idempotence": "false",
         "max.in.flight.requests.per.connection": "5",
         "request.timeout.ms": "30000",
