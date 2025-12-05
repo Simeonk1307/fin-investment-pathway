@@ -10,15 +10,22 @@ LLMProvider = Literal["openai", "gemini", "claude", "perplexity","huggingface", 
 
 llm_settings = LLMSettings()
 
-safety_model = ChatGroq(
-                model="llama-3.1-8b-instant",
-                temperature=0.7,
-                max_tokens=2048,
-                api_key=llm_settings.get_key("groq"),
+# safety_model = ChatGroq(
+#                 model="llama-3.1-8b-instant",
+#                 temperature=0.7,
+#                 max_tokens=2048,
+#                 api_key=llm_settings.get_key("groq"),
+#             )
+safety_model = ChatPerplexity(
+                model="sonar",
+                temperature=0.3,
+                pplx_api_key=llm_settings.get_key("perplexity"),
+                timeout=60,  # Important!
+                max_retries=2
             )
 
 def get_llm(
-    provider: LLMProvider = "groq",
+    provider: LLMProvider = "perplexity",
     model: str = None,
     temperature: float = 0.3,
     **kwargs

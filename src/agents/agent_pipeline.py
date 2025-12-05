@@ -26,16 +26,16 @@ signal.signal(signal.SIGINT, signal_handler)
 #even in pathway run, we can catch ctrl+c
 # ============================================================================
 
-class FinnHubNewsSchema(pw.Schema):
-    id: int
-    # news_id: int  # The 137618953 field
-    headline: str
-    description: str
-    url: str
-    source: str
-    published_at: str
-    category: str
-    company: str
+# class TrialFinnHubNewsSchema(pw.Schema):
+#     id: int
+#     # news_id: int  # The 137618953 field
+#     headline: str
+#     description: str
+#     url: str
+#     source: str
+#     published_at: str
+#     category: str
+#     company: str
 
 # class FinnHubNewsSchema(pw.Schema):
 #     news_id: int
@@ -201,20 +201,20 @@ def run_pipeline(
     graph = create_graph()
     finbert_analyzer = FinBertSentimentAnalyzer()
 
-    #if running in test mode
-    news_analysis_table = news_table.groupby(pw.this.company).reduce(
-        symbol=pw.this.company,
-        articles=pw.reducers.tuple(merge(pw.this.headline, pw.this.description)),
-        sentimental_scores=pw.reducers.tuple(get_sentiment(pw.this.headline, pw.this.description)),
+    # #if running in test mode
+    # news_analysis_table = news_table.groupby(pw.this.company).reduce(
+    #     symbol=pw.this.company,
+    #     articles=pw.reducers.tuple(merge(pw.this.headline, pw.this.description)),
+    #     sentimental_scores=pw.reducers.tuple(get_sentiment(pw.this.headline, pw.this.description)),
 
-    )
+    # )
     
     # Extract ticker and prepare minimal state
-    # news_analysis_table = news_table.groupby(pw.this.symbol).reduce(
-    #     symbol=pw.this.symbol,
-    #     articles = pw.reducers.tuple(merge(pw.this.title, pw.this.content)),
-    #     sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.title, pw.this.content)),
-    # )
+    news_analysis_table = news_table.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        articles = pw.reducers.tuple(merge(pw.this.title, pw.this.content)),
+        sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.title, pw.this.content)),
+    )
 
     agents_input = news_analysis_table.select(
         symbol=pw.this.symbol,
@@ -251,11 +251,21 @@ if __name__ == "__main__":
     csv_path = "outputs/finnhub_news.csv"
     mode = "static"
     output_path = "outputs/"
-    
+    class TrialFinnHubNewsSchema(pw.Schema):
+        id: int
+        # news_id: int  # The 137618953 field
+        headline: str
+        description: str
+        url: str
+        source: str
+        published_at: str
+        category: str
+        company: str
+
     # Read CSV as Pathway table (simulates Redpanda stream)
     news_table = pw.io.csv.read(
         csv_path,
-        schema=FinnHubNewsSchema,
+        schema=TrialFinnHubNewsSchema,
         mode=mode,
         autocommit_duration_ms=1000
     )
