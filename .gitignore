@@ -216,3 +216,4 @@ rpk*
 src/agents/trial_agent_pipeline.py
 src/agents/trial_agent_pipeline.py
 src/agents/agents.py
+debug_output
