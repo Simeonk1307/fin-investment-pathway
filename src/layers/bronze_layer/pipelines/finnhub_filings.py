@@ -1,145 +1,217 @@
 import os
-import json
 import sys
-import signal
+import json
 import time
+import uuid
+import signal
 import logging
+from datetime import datetime
 from dotenv import load_dotenv
+import pathway as pw
+import finnhub
+
+from confluent_kafka import Producer
+from confluent_kafka.admin import AdminClient
 
 from src.layers.bronze_layer.collectors.finnhub_filings_producer import FinnhubFilingsProducer
-from src.config.logger_config import get_module_logger
 from src.utils.common import common_config, profiles
 
+load_dotenv()
 
-# ============================================================
-# GLOBAL SHUTDOWN FLAGS
-# ============================================================
-_shutdown_flag = False
-_producer_instance = None
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-5s | %(message)s"
+)
+
+logger = logging.getLogger("bronze.filings")
 
 
-def _signal_handler(signum, frame):
-    global _shutdown_flag, _producer_instance
+def section(title):
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info(title)
+    logger.info("=" * 80)
 
-    print(f"\n[SecFilingsProducer] Signal {signum} received — shutting down...")
-    _shutdown_flag = True
 
-    if _producer_instance is not None:
+def write_debug_file(pipeline, name, content):
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    folder = os.path.join("debug_output", pipeline)
+    os.makedirs(folder, exist_ok=True)
+
+    if isinstance(content, (dict, list)):
+        content = json.dumps(content, indent=2, sort_keys=True)
+
+    path = os.path.join(folder, f"{ts}-{name}.log")
+    with open(path, "a") as f:
+        f.write(str(content) + "\n")
+
+
+def debug_snapshot(name, **data):
+    write_debug_file("bronze/filings", name, {"ts": datetime.utcnow().isoformat(), **data})
+
+
+def validate_broker(config):
+    md = AdminClient(config).list_topics(timeout=10)
+    logger.info(f"Broker OK ({len(md.brokers)} brokers, {len(md.topics)} topics)")
+    return md
+
+
+def validate_topic(config, topic):
+    md = AdminClient(config).list_topics(timeout=10)
+    if topic not in md.topics:
+        raise ValueError(f"Topic missing: {topic}")
+    logger.info(f"Topic OK: {topic}")
+
+
+def validate_producer(config):
+    p = Producer(config)
+    p.flush(3)
+    logger.info("Producer OK")
+
+
+def validate_api_key(api_key):
+    finnhub.Client(api_key=api_key).filings(symbol="AAPL")
+    logger.info("Finnhub API key OK")
+
+
+def validate_tickers(api_key, tickers):
+    client = finnhub.Client(api_key=api_key)
+    valid = []
+    for t in tickers:
+        start = time.time()
         try:
-            _producer_instance.stop()
+            r = client.company_profile2(symbol=t)
+            ms = round((time.time() - start) * 1000, 2)
+            if r and r.get("ticker"):
+                valid.append(t)
+                logger.info(f"✓ {t} ({ms} ms)")
+            else:
+                logger.warning(f"✗ {t} ({ms} ms)")
         except Exception:
-            pass
+            logger.warning(f"{t}: error")
+        time.sleep(0.05)
+
+    if not valid:
+        raise ValueError("No valid tickers")
+
+    logger.info(f"Tickers OK ({len(valid)}/{len(tickers)})")
+    return valid
 
 
-signal.signal(signal.SIGINT, _signal_handler)
-signal.signal(signal.SIGTERM, _signal_handler)
+def main():
+    signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
+    required = [
+        "PATHWAY_LICENSE_KEY",
+        "REDPANDA_BRONZE_FILINGS_TOPIC",
+        "FINNHUB_API_KEY",
+        "TICKERS",
+        "REDPANDA_BROKERS",
+        "REDPANDA_SECURITY_PROTOCOL",
+        "REDPANDA_SASL_MECHANISM",
+        "REDPANDA_USERNAME",
+        "REDPANDA_PASSWORD"
+    ]
 
-# ============================================================
-# Helpers
-# ============================================================
-def load_tickers(logger: logging.Logger) -> list[str]:
-    """Load tickers from env or fallback."""
-    raw = os.getenv("TICKERS", "[]")
-
-    try:
-        tickers = json.loads(raw)
-        if not isinstance(tickers, list) or not tickers:
-            raise ValueError("TICKERS must be a non-empty list")
-        return tickers
-
-    except Exception:
-        logger.exception("Invalid TICKERS env. Using safe defaults.")
-        return ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA"]
-
-
-def validate_env(logger: logging.Logger):
-    required = ["FINNHUB_API_KEY", "REDPANDA_BRONZE_FILINGS_TOPIC"]
-    missing = [k for k in required if not os.getenv(k)]
-
+    missing = [v for v in required if not os.getenv(v)]
     if missing:
-        logger.error("Missing required env vars: %s", ", ".join(missing))
+        logger.error(f"Missing env vars: {missing}")
         sys.exit(1)
 
+    pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
-# ============================================================
-# MAIN
-# ============================================================
-def main():
-    global _producer_instance
+    DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+    SKIP_TICKER_VALIDATION = os.getenv("SKIP_TICKER_VALIDATION", "false").lower() == "true"
 
-    load_dotenv()
-    logger = get_module_logger("SecFilingsProducer")
+    try:
+        tickers = json.loads(os.getenv("TICKERS"))
+    except:
+        logger.error("Invalid TICKERS JSON")
+        sys.exit(1)
 
-    validate_env(logger)
-
-    tickers = load_tickers(logger)
     topic = os.getenv("REDPANDA_BRONZE_FILINGS_TOPIC")
     api_key = os.getenv("FINNHUB_API_KEY")
 
-    # Combine Kafka/Redpanda configs
-    producer_config = {
-        **common_config,
-        **profiles["high_throughput"],
-        "client.id": "finnhub-filings-producer",
-    }
+    consumer_id = (
+        f"bronze-filings-consumer-debug-{int(time.time())}"
+        if DEBUG else "bronze-filings-consumer"
+    )
 
-    # ------------------------------
-    # Startup Banner
-    # ------------------------------
-    logger.info("============================================================")
-    logger.info("               Finnhub Filings → Redpanda Producer           ")
-    logger.info("============================================================")
-    logger.info("Topic           : %s", topic)
-    logger.info("Tickers         : %s", ", ".join(tickers))
-    logger.info("Poll Interval   : %s seconds", 600)
-    logger.info("Lookback Window : %s days", 90)
-    logger.info("Kafka Profile   : high_throughput")
-    logger.info("============================================================")
+    producer_config = (
+        common_config
+        | profiles["high_throughput"]
+        | {"client.id": f"finnhub-filings-{uuid.uuid4().hex[:6]}", "log_level": 0}
+    )
 
-    restart_delay = 2  # starts small, backoff increases
+    section("Validating Bronze Pipeline")
 
-    while not _shutdown_flag:
+    try:
+        validate_broker(common_config)
+        validate_topic(common_config, topic)
+        validate_producer(producer_config)
+        validate_api_key(api_key)
+    except Exception as e:
+        logger.error("")
+        logger.error("▼ VALIDATION ERROR ▼")
+        logger.error(f"{type(e).__name__}: {e}")
+        logger.error("▲ END ERROR ▲")
+        logger.error("")
+        sys.exit(1)
+
+    if not SKIP_TICKER_VALIDATION:
         try:
-            _producer_instance = FinnhubFilingsProducer(
-                logger=logger,
-                topic=topic,
-                producer_config=producer_config,
-                tickers=tickers,
-                api_key=api_key,
-                poll_interval=600,
-                lookback_days=90,      # WORKS with Finnhub
-                max_retries=5,
-            )
+            tickers = validate_tickers(api_key, tickers)
+        except Exception as e:
+            logger.error("")
+            logger.error("▼ TICKER VALIDATION ERROR ▼")
+            logger.error(f"{type(e).__name__}: {e}")
+            logger.error("▲ END ERROR ▲")
+            logger.error("")
+            sys.exit(1)
+    else:
+        logger.info("Ticker validation skipped")
 
-            logger.info("[Launcher] Producer initialized.")
+    if DEBUG:
+        debug_snapshot(
+            "startup",
+            topic=topic,
+            tickers=tickers,
+            producer_id=producer_config.get("client.id"),
+            consumer_id=consumer_id,
+            producer_config_keys=list(producer_config.keys()),
+        )
 
-            # Blocking run loop
-            _producer_instance.run()
+    section("Starting FinnHub Filings Bronze Producer")
+    logger.info(f"Mode: {'DEBUG' if DEBUG else 'PROD'}")
+    logger.info(f"Group: {consumer_id}")
+    logger.info(f"Tickers: {len(tickers)}")
+    logger.info(f"Topic: {topic}")
 
-        except KeyboardInterrupt:
-            logger.info("[Launcher] KeyboardInterrupt — exiting...")
-            break
+    try:
+        producer = FinnhubFilingsProducer(
+            tickers=tickers,
+            logger=logger,
+            topic=topic,
+            api_key=api_key,
+            producer_config=producer_config,
+            poll_interval=600,
+            lookback_days=90,
+            max_retries=5,
+        )
+        producer.run()
 
-        except Exception:
-            logger.exception("[Launcher] Producer crashed unexpectedly.")
+    except SystemExit:
+        logger.info("Shutdown signal received")
 
-            if _shutdown_flag:
-                break
-
-            logger.warning("[Launcher] Restarting producer in %.1f seconds...", restart_delay)
-            time.sleep(restart_delay)
-            restart_delay = min(restart_delay * 2, 60)
-
-        else:
-            logger.info("[Launcher] Producer stopped cleanly.")
-            break
-
-    logger.info("[Launcher] Shutdown complete.")
+    except Exception as e:
+        logger.error("")
+        logger.error("▼ RUNTIME ERROR ▼")
+        logger.error(f"{type(e).__name__}: {e}", exc_info=True)
+        logger.error("▲ END ERROR ▲")
+        logger.error("")
+        sys.exit(1)
 
 
-# ============================================================
-# ENTRYPOINT
-# ============================================================
 if __name__ == "__main__":
     main()

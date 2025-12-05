@@ -152,6 +152,7 @@ def main():
         common_config
         | profiles["high_throughput"]
         | {"client.id": f"finnhub-news-{uuid.uuid4().hex[:6]}"}
+        | {"log_level": 0}
     )
 
     consumer_config = common_config | {
