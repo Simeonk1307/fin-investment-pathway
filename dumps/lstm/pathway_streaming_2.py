@@ -37,7 +37,7 @@ import pandas as pd
 import yfinance as yf
 
 # Import our LSTM predictor
-from dumps.pipeline.lstm.LSTM_TEST_TEST import initialize_manager, predict_stock
+from dumps.lstm.LSTM_TEST_TEST import initialize_manager, predict_stock
 
 try:
     import pathway as pw
