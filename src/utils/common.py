@@ -9,6 +9,7 @@ common_config = {
     "sasl.mechanism": os.getenv("REDPANDA_SASL_MECHANISM"),
     "sasl.username": os.getenv("REDPANDA_USERNAME"),
     "sasl.password": os.getenv("REDPANDA_PASSWORD"),
+    "log_level": 0
 }
 
 profiles = {
