@@ -3,14 +3,16 @@ import time
 import datetime
 import logging
 import requests
+import re
 import finnhub
+from bs4 import BeautifulSoup
 from typing import Dict, List
 from dotenv import load_dotenv
 
 from src.layers.bronze_layer.base.base_producer import BaseProducer
 from src.layers.bronze_layer.event_envelope import create_event_envelope
 
-# Load environment variables immediately
+# Load environment variables
 load_dotenv()
 
 _RETRY = (5, 10, 20)
@@ -25,8 +27,9 @@ class FinnhubFilingsProducer(BaseProducer):
         logger,
         topic,
         producer_config,
-        tickers,
+        tickers=None, # Made optional so we can fallback to ENV
         api_key=None,
+        user_email="admin@example.com",
         poll_interval=600,
         lookback_days=2,
         max_retries=5,
@@ -35,7 +38,18 @@ class FinnhubFilingsProducer(BaseProducer):
     ):
         super().__init__(logger, topic, producer_config)
 
-        self.tickers = tickers
+        # 1. Ticker Loading Logic (Args -> Env -> Error)
+        if tickers:
+            self.tickers = tickers
+        else:
+            # If no tickers passed, look in .env
+            env_str = os.getenv("TICKERS", "")
+            self.tickers = [t.strip() for t in env_str.split(",") if t.strip()]
+        
+        if not self.tickers:
+            logger.critical("No tickers found in args or .env")
+            raise ValueError("No tickers provided! Add 'TICKERS=AAPL,MSFT' to your .env file.")
+
         self.poll_interval = poll_interval
         self.lookback_days = lookback_days
         self.max_retries = max_retries
@@ -45,27 +59,33 @@ class FinnhubFilingsProducer(BaseProducer):
         self.consecutive_errors = 0
         self.last_successful_fetch = time.time()
 
-        # Load API Key from Init arg OR Environment
+        # Finnhub Setup
         self.api_key = api_key or os.getenv("FINNHUB_API_KEY")
         if not self.api_key:
-            logger.critical("Missing FINNHUB_API_KEY in environment or init args")
+            logger.critical("Missing FINNHUB_API_KEY")
             raise ValueError("FINNHUB_API_KEY required")
 
         self.client = finnhub.Client(api_key=self.api_key)
         self.seen = set()
 
+        # SEC Scraper Setup
+        self.sec_headers = {
+            "User-Agent": f"FinnhubFilingBot/1.0 ({user_email})",
+            "Accept-Encoding": "gzip, deflate",
+            "Host": "www.sec.gov"
+        }
+
         if debug:
             self.debug_writer("filings", "startup", {
                 "topic": topic,
-                "tickers": tickers,
+                "tickers": self.tickers,
                 "poll_interval": poll_interval,
-                "lookback_days": lookback_days,
             })
 
-        logger.info(f"Filings ready (topic={topic}, tickers={len(tickers)})")
+        logger.info(f"Filings ready (topic={topic}, tickers={len(self.tickers)})")
 
     def _fetch(self, ticker):
-        """Fetches filings list only (no content scraping)."""
+        """Fetches metadata list from Finnhub (Lightweight)"""
         if self.consecutive_errors >= self.MAX_CONSECUTIVE_ERRORS:
             self.logger.error(f"Too many errors, pausing {self.BACKOFF}s")
             time.sleep(self.BACKOFF)
@@ -85,47 +105,48 @@ class FinnhubFilingsProducer(BaseProducer):
                     _from=start.strftime("%Y-%m-%d"),
                     to=today.strftime("%Y-%m-%d"),
                 )
-
-                self.client._session.timeout = (10, 30)
-                time.sleep(0.1) # Rate limit courtesy
+                
+                self.consecutive_errors = 0
+                time.sleep(0.1) 
                 return fs or []
 
-            except (requests.exceptions.ReadTimeout,
-                    requests.exceptions.ConnectTimeout,
-                    requests.exceptions.ConnectionError):
+            except Exception as e:
                 self.consecutive_errors += 1
                 if r < self.max_retries - 1:
                     time.sleep(_RETRY[min(r, 2)])
                     continue
                 return []
-
-            except finnhub.FinnhubAPIException as e:
-                self.consecutive_errors += 1
-                msg = str(e)
-
-                if "Invalid API key" in msg:
-                    self.stop()
-                    return []
-
-                if "Too many requests" in msg:
-                    time.sleep(30 * self.consecutive_errors)
-                    break
-
-                if "API limit reached" in msg:
-                    time.sleep(60)
-                    break
-
-                time.sleep(5 * self.consecutive_errors)
-                break
-
-            except Exception:
-                self.consecutive_errors += 1
-                if r < self.max_retries - 1:
-                    time.sleep(_RETRY[min(r, 2)])
-                    continue
-                return []
-
         return []
+
+    def _crawl_and_extract(self, url):
+        """Visits SEC URL, strips HTML tags, returns summary text."""
+        if not url: return None
+        
+        try:
+            with requests.Session() as s:
+                resp = s.get(url, headers=self.sec_headers, timeout=10)
+            
+            if resp.status_code == 403:
+                self.logger.error("SEC blocked request (403). Check User-Agent.")
+                return None
+            
+            if resp.status_code != 200:
+                return None
+
+            soup = BeautifulSoup(resp.content, "html.parser")
+
+            # Clean junk
+            for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "xbrl"]):
+                tag.decompose()
+
+            text = soup.get_text(separator=' ', strip=True)
+            clean_text = re.sub(r'\s+', ' ', text)
+
+            return clean_text
+
+        except Exception as e:
+            self.logger.error(f"Failed to crawl {url}: {e}")
+            return None
 
     def _parse(self, entry, ticker):
         acc = entry.get("accessNumber")
@@ -136,28 +157,35 @@ class FinnhubFilingsProducer(BaseProducer):
         if not acc or not form or not date or not url:
             return None
 
+        if acc in self.seen:
+            return None
+
         try:
             ts = int(datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        except Exception:
-            try:
-                ts = int(datetime.datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000)
-            except Exception:
-                ts = int(time.time() * 1000)
+        except:
+            ts = int(time.time() * 1000)
+
+        # Crawl for summary, but discard full content
+        full_text = self._crawl_and_extract(url)
+        summary = (full_text[:2000] + "...") if full_text else "No content extracted"
 
         return {
             "symbol": ticker,
             "timestamp": ts,
-            "access_number": acc,
             "form_type": form,
             "headline": f"{form} Filing for {ticker}",
+            "content": None,          # <--- SAVES SPACE
+            "summary": summary,       # <--- PROVIDES PREVIEW
             "url": url,
             "date": date,
+            "access_number": acc,
+            "source": "SEC",
+            "source_type": "filing",
         }
 
     def _publish(self, f):
         acc = f.get("access_number")
-        form = f.get("form_type")
-
+        
         if not acc or acc in self.seen:
             return False
 
@@ -169,67 +197,64 @@ class FinnhubFilingsProducer(BaseProducer):
                 self.seen.add(acc)
                 if len(self.seen) > self.MAX_DEDUPE_CACHE:
                     self.seen.pop()
-                
-                self.logger.info(f"[Filings:Send] access={acc} form={form}")
+                self.logger.info(f"[Sent] {f['headline']}")
                 return True
-
-            self.logger.error(f"[Filings:SendFail] access={acc} form={form}")
             return False
 
         except Exception:
-            self.logger.error(f"[Filings:SendError] access={acc}")
             return False
 
     def _run_loop(self):
-        i = sent = errs = 0
-        self.logger.info("Loop start")
-
+        self.logger.info(f"Starting Loop for tickers: {self.tickers}")
         while self._running:
-            i += 1
-            start = time.time()
-            new = 0
-
             try:
                 for t in self.tickers:
-                    if not self._running:
-                        break
+                    if not self._running: break
 
                     filings = self._fetch(t)
-                    if not filings:
-                        continue
-
                     filings.sort(key=lambda x: x.get("filedDate", ""))
 
                     for e in filings:
                         p = self._parse(e, t)
-                        if p and self._publish(p):
-                            new += 1
-
-                sent += new
-                dur = time.time() - start
-
-                if self.debug:
-                    self.debug_writer("filings", "loop", {
-                        "iteration": i,
-                        "new": new,
-                        "total": sent,
-                        "errors": errs,
-                        "duration": dur,
-                    })
-
-                self.logger.info(
-                    f"iter={i} new={new} total={sent} err={errs} dur={dur:.2f}s"
-                )
+                        if p:
+                            self._publish(p)
+                            time.sleep(0.5) # Rate limit protection
 
                 time.sleep(self.poll_interval)
 
-            except Exception:
-                errs += 1
-                self.logger.error("Loop error", exc_info=True)
+            except Exception as e:
+                self.logger.error(f"Loop error: {e}")
                 time.sleep(5)
-
-        self.logger.info(f"Stopped iters={i} sent={sent} err={errs}")
 
     def stop(self):
         self._running = False
         self.logger.info("Stop")
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    logger = logging.getLogger("FinnhubCrawler")
+    
+    print("--- STARTING CRAWLER ---")
+
+    # We pass tickers=None so it loads from .env automatically
+    try:
+        producer = FinnhubFilingsProducer(
+            logger=logger,
+            topic="test_topic",
+            producer_config={},
+            tickers=None, # <--- Auto-load from .env
+            poll_interval=10,
+            lookback_days=60, 
+            user_email="student_demo@example.com"
+        )
+
+        # Mock Send
+        producer.send = lambda env, key: print(f"   -> SENT: {env['data']['headline']} | Summary Len: {len(env['data']['summary'])}") or True
+        producer._running = True
+        
+        producer._run_loop()
+    except ValueError as e:
+        print(f"\nCONFIGURATION ERROR: {e}")
+    except KeyboardInterrupt:
+        producer.stop()
