@@ -83,7 +83,6 @@ def data_ingestion_node(state: AgentState) -> AgentState:
     #     "headline": state.get("headline",""),
     #     "description": state.get("description",""),
     # }
-    print(state)
     return state
 
 
@@ -130,7 +129,7 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
     # logger.info(state)  
     # Run through graph
     result = graph.invoke(state)
-    logger.info(f"DEBUG - process_news_row result: {result.keys()}, type: {type(result)},analysis : {result.get('final_analysis',{})}")
+    # logger.info(f"DEBUG - process_news_row result: {result.keys()}, type: {type(result)},analysis : {result.get('final_analysis',{})}")
     return result.get("final_analysis", {
         "prediction": "NEUTRAL",
         "confidence": "LOW",

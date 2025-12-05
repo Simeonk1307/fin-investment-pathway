@@ -18,9 +18,9 @@ class FinBertSentimentAnalyzer:
     def analyze_sentiment(self, text: str) -> tuple[float, float, float]:
 
         logger = logging.getLogger(__name__)
-        logger.info(f"Analyzing sentiment for text{text} of length {len(text)}")
-    # def analyze_sentiment(self, text: str) -> float:
-    # def analyze_sentiment(self, text: str) -> tuple[str, float]:
+        # logger.info(f"Analyzing sentiment for text{text} of length {len(text)}")
+        # def analyze_sentiment(self, text: str) -> float:
+        # def analyze_sentiment(self, text: str) -> tuple[str, float]:
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True)
         inputs = {key: value.to(self.device) for key, value in inputs.items()}
 
