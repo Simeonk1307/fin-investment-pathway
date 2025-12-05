@@ -85,7 +85,7 @@ def compute_technical_indicators(df):
     3. Retrain - that's it!
     """
     df = df.copy()
-    
+    df['Return'] = df['Close'].pct_change()
     # Simple Moving Averages
     df['SMA_5'] = df['Close'].rolling(window=5).mean()
     df['SMA_20'] = df['Close'].rolling(window=20).mean()

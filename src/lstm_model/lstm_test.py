@@ -380,19 +380,9 @@ def run_pathway_streaming_pipeline():
         message=get_json_value(pw.this.prediction_result, "message", "")
     )
     pw.io.csv.write(results_table, f"{OUTPUT_DIR}/all_predictions.csv")
-    # Filter only ready 
-    @pw.udf 
-    def print_checkpoint(ready:bool)->bool:
-        if ready:
-            logger.info("Checkpoint reached: A prediction is ready.")
-            import time
-            time.sleep(0.5)
-        return ready
+
     ready_predictions = results_table.filter(pw.this.ready)
-    # checkpoint = ready_predictions.select(
-    #     ready=print_checkpoint(pw.this.ready)
-    # )
-    # Output results
+
     
     # pw.io.jsonlines.write(ready_predictions, f"{OUTPUT_DIR}/predictions.jsonl")
     pw.io.csv.write(ready_predictions, f"{OUTPUT_DIR}/predictions.csv")

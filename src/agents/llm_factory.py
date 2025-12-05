@@ -18,7 +18,7 @@ safety_model = ChatGroq(
             )
 
 def get_llm(
-    provider: LLMProvider = "perplexity",
+    provider: LLMProvider = "groq",
     model: str = None,
     temperature: float = 0.3,
     **kwargs

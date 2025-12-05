@@ -2,18 +2,19 @@ from asyncio.log import logger
 import pathway as pw
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from langchain_community.chat_models import ChatPerplexity
-import operator
+
 from src.agents.news_analyst import news_agent
 from src.agents.final_agent import final_agent
 from src.agents.llm_factory import get_llm
 from src.agents.agent_state import AgentState
 from src.agents.guard_rail import safety_guardrail_node
+from src.agents.filings_analyst import filings_agent
+from src.agents.social_analyst import social_agent
+
 from datetime import datetime
 import psutil
 from src.agents.finbert import FinBertSentimentAnalyzer
-from src.schemas.silver_schemas import FinnHubNewsSchema
+# from src.schemas.silver_schemas import FinnHubNewsSchema
  
 #if ctrl+c is pressed, stop the program
 import signal
@@ -25,16 +26,16 @@ signal.signal(signal.SIGINT, signal_handler)
 #even in pathway run, we can catch ctrl+c
 # ============================================================================
 
-# class FinnHubNewsSchema(pw.Schema):
-#     id: int
-#     # news_id: int  # The 137618953 field
-#     headline: str
-#     description: str
-#     url: str
-#     source: str
-#     published_at: str
-#     category: str
-#     company: str
+class FinnHubNewsSchema(pw.Schema):
+    id: int
+    # news_id: int  # The 137618953 field
+    headline: str
+    description: str
+    url: str
+    source: str
+    published_at: str
+    category: str
+    company: str
 
 # class FinnHubNewsSchema(pw.Schema):
 #     news_id: int
@@ -83,7 +84,9 @@ def data_ingestion_node(state: AgentState) -> AgentState:
     #     "headline": state.get("headline",""),
     #     "description": state.get("description",""),
     # }
-    return state
+    
+    "Need to verify all inputs and outputs are present (keys) in state"
+    return None
 
 
 # ============================================================================
@@ -100,14 +103,24 @@ def create_graph() -> StateGraph:
 
     workflow.add_node("data_ingestion", data_ingestion_node)
     workflow.add_node("news_analysis", news_agent)
+    workflow.add_node("filings_analysis", filings_agent)
+    workflow.add_node("social_analysis", social_agent)
     workflow.add_node("final_analysis", final_agent)
     workflow.add_node("safety_guardrail", safety_guardrail_node)
 
     workflow.set_entry_point("data_ingestion")
+
     workflow.add_edge("data_ingestion", "news_analysis")
+    workflow.add_edge("data_ingestion", "filings_analysis")
+    workflow.add_edge("data_ingestion", "social_analysis")
+
     workflow.add_edge("news_analysis", "final_analysis")
+    workflow.add_edge("filings_analysis", "final_analysis")
+    workflow.add_edge("social_analysis", "final_analysis")
+
     workflow.add_edge("final_analysis", "safety_guardrail")
     workflow.add_edge("safety_guardrail", END)
+
     return workflow.compile()
 
 
@@ -117,10 +130,38 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
     state = {
         "ticker": ticker,
 
-        "news":
-        {"news_articles": news_articles,
-         "news_sentiment_scores": news_sentiment_scores,
-         "news_analysis":{},
+        "news_data":
+        {
+            "news_articles": news_articles,
+            "news_sentiment_scores": news_sentiment_scores,
+        },
+
+        "filings_data":{
+
+        },
+
+        "social_data":{
+
+        },
+
+        "market_data":{
+
+        },
+
+        "news_analysis":{
+
+        },
+
+        "filings_analysis":{
+
+        },
+
+        "social_analysis":{
+
+        },
+
+        "final_analysis":{
+
         },
 
         "messages": [HumanMessage(content=f"Analyzing {ticker}")],
@@ -155,21 +196,25 @@ def run_pipeline(
     def get_sentiment(headline:str="", description:str = "")->tuple[float, float, float]:
         
         text = f"Headline: {headline}\nDescription: {description}"
-        
-        # logger.info(f"Getting sentiment for text: {text}, length: {len(text)}")
-        
         return finbert_analyzer.analyze_sentiment(text)
 
     graph = create_graph()
     finbert_analyzer = FinBertSentimentAnalyzer()
 
+    #if running in test mode
+    news_analysis_table = news_table.groupby(pw.this.company).reduce(
+        symbol=pw.this.company,
+        articles=pw.reducers.tuple(merge(pw.this.headline, pw.this.description)),
+        sentimental_scores=pw.reducers.tuple(get_sentiment(pw.this.headline, pw.this.description)),
+
+    )
     
     # Extract ticker and prepare minimal state
-    news_analysis_table = news_table.groupby(pw.this.symbol).reduce(
-        symbol=pw.this.symbol,
-        articles = pw.reducers.tuple(merge(pw.this.title, pw.this.content)),
-        sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.title, pw.this.content)),
-    )
+    # news_analysis_table = news_table.groupby(pw.this.symbol).reduce(
+    #     symbol=pw.this.symbol,
+    #     articles = pw.reducers.tuple(merge(pw.this.title, pw.this.content)),
+    #     sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.title, pw.this.content)),
+    # )
 
     agents_input = news_analysis_table.select(
         symbol=pw.this.symbol,
@@ -203,7 +248,7 @@ if __name__ == "__main__":
     print("🧪 TEST MODE - CSV Streaming")
     print("=" * 60)
     
-    csv_path = "outputs/past_finnhub_news.csv"
+    csv_path = "outputs/finnhub_news.csv"
     mode = "static"
     output_path = "outputs/"
     
