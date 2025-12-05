@@ -16,7 +16,7 @@ def final_agent(state:AgentState) -> dict:
     """
     Final agent to consolidate insights and provide final recommendation.
     """
-    logger.info(f"🧠 Processing final analysis through Final Agent {state}")
+    # logger.info(f"🧠 Processing final analysis through Final Agent {state}")
 
     try:
         FINAL_PROMPT = f"""

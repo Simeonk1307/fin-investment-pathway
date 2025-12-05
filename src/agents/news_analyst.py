@@ -15,7 +15,7 @@ def news_agent(state:AgentState) -> dict:
     """
     Analyze news summary to extract key insights for investment decision-making.
     """
-    logger.info(f"📰 Processing news article through News Analyst Agent {state}")
+    # logger.info(f"📰 Processing news article through News Analyst Agent {state}")
 
     try:
         # news_text =f"Headline: {state['news']['headline']}\nDescription: {state['news']['description']}"
