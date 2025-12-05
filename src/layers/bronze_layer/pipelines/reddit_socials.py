@@ -140,7 +140,7 @@ def main():
             tickers=tickers,
             subreddit="stocks",
             poll_interval=300,
-            limit=10,
+            limit=50,
             debug=DEBUG,
             debug_writer=write_debug_file,
         )
