@@ -56,7 +56,7 @@ PIPELINES = {
     "FILINGS": {
         "schema": FinnhubFilingsSchema,
         "mapping": finnhub_filings_mapping,
-        "dedupe": ["symbol", "timestamp"],
+        "dedupe": ["access_number"],
         "key": "symbol",
     },
 }

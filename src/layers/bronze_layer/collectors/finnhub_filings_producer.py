@@ -147,14 +147,11 @@ class FinnhubFilingsProducer(BaseProducer):
         return {
             "symbol": ticker,
             "timestamp": ts,
+            "access_number": acc,
             "form_type": form,
             "headline": f"{form} Filing for {ticker}",
-            "content": None,  # EXPLICITLY IGNORED
             "url": url,
             "date": date,
-            "access_number": acc,
-            "source": "SEC",
-            "source_type": "filing",
         }
 
     def _publish(self, f):
@@ -236,53 +233,3 @@ class FinnhubFilingsProducer(BaseProducer):
     def stop(self):
         self._running = False
         self.logger.info("Stop")
-
-
-# ---------------------------------------------------------
-# RUNNABLE MAIN BLOCK
-# ---------------------------------------------------------
-if __name__ == "__main__":
-    import sys
-    
-    # 1. Setup Logging
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-    logger = logging.getLogger("FinnhubEnvTest")
-    
-    print("--- STARTING ENV TEST ---")
-
-    # 2. Get Tickers from ENV
-    env_tickers = os.getenv("TICKERS")
-    
-    if not env_tickers:
-        print("ERROR: 'TICKERS' not found in .env file.")
-        print("Please add: TICKERS=AAPL,TSLA,MSFT to your .env")
-        sys.exit(1)
-
-    # Convert "AAPL,TSLA,MSFT" -> ["AAPL", "TSLA", "MSFT"]
-    ticker_list = [t.strip() for t in env_tickers.split(",") if t.strip()]
-    print(f"Loaded {len(ticker_list)} tickers from env: {ticker_list}")
-
-    # 3. Instantiate Producer
-    try:
-        producer = FinnhubFilingsProducer(
-            logger=logger,
-            topic="test_topic",
-            producer_config={}, 
-            tickers=ticker_list,  # <-- Using the list from ENV
-            poll_interval=10,    
-            lookback_days=60,     # 60 days to ensure data is found
-            debug=True
-        )
-
-        # 4. Mock Send (so it doesn't need Kafka)
-        producer.send = lambda env, key: print(f"   [MOCK SEND] Found: {env['data']['headline']}") or True
-        producer._running = True
-
-        # 5. Run
-        producer._run_loop()
-
-    except KeyboardInterrupt:
-        print("\nStopping...")
-        producer.stop()
-    except Exception as e:
-        print(f"\nCRITICAL ERROR: {e}")

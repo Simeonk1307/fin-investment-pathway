@@ -52,9 +52,9 @@ socials_mapping = {
 class FinnhubFilingsSchema(pw.Schema):
     symbol: str
     timestamp: int
+    access_number: str
     form_type: str
     headline: str
-    content:str
     url: str
     date: str
 
