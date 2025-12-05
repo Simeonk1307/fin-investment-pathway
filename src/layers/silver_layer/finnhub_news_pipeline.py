@@ -4,9 +4,18 @@ from dotenv import load_dotenv
 from src.schemas.silver_news_schema import FinnHubNewsSchema, finnhub_news_mapping
 from src.utils.common import common_config, profiles
 from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int, unpack_from_schema, dedupe_from_schema
+from src.KnowledgeGraph.kg_updater import KGNewsUpdater, Neo4jConfig
+
 
 load_dotenv()
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
+
+neo4j_config = Neo4jConfig(
+    uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+    user=os.getenv("NEO4J_USER", "neo4j"),
+    password=os.getenv("NEO4J_PASSWORD", "password"),
+)
+kg_updater = KGNewsUpdater(neo4j_config)
 
 consumer_settings = common_config | {
     "group.id": "bronze-news-consumer",  # Changed from stocks to news
@@ -65,6 +74,26 @@ deduped = dedupe_from_schema(
     dedupe_columns=["news_id"]
 ) # this is fine
 
+def row_to_news_dict(row) -> dict:
+    return {
+        "category": row.category,
+        "datetime": int(row.datetime),
+        "headline": row.headline,
+        "news_id": int(row.news_id),
+        "image": row.image,
+        "related": row.related,
+        "source": row.source,
+        "summary": row.summary,
+        "url": row.url,
+    }
+
+def kg_update_sink(row) -> None:
+    news = row_to_news_dict(row)
+    kg_updater.update_kg_from_news(news)
+
+_ = deduped.select(
+    _sink = pw.apply(kg_update_sink, pw.this)
+)
 
 pw.io.kafka.write(
     deduped,

@@ -1,11 +1,6 @@
 import pathway as pw
 
 # STOCKS
-class YFinanceEquitySchema(pw.Schema):
-    price: float
-    symbol: str 
-    timestamp: int
-
 class FinnHubStockSchema(pw.Schema):
     price: float
     symbol: str
@@ -18,11 +13,6 @@ finnhub_stocks_mapping = {
     "timestamp": "t",
     "volume": "v"
 }
-
-yfinance_equity_mapping = {
-    "symbol": "id"
-}
-
 
 # NEWS
 class FinnHubNewsSchema(pw.Schema):
@@ -59,22 +49,16 @@ socials_mapping = {
 }
 
 # FILINGS
-class SecFilingsSchema(pw.Schema):
+class FinnhubFilingsSchema(pw.Schema):
     symbol: str
     timestamp: int
-    source: str
-    company: str
     form_type: str
-    title: str
+    headline: str
     content:str
     url: str
-    
     date: str
 
-sec_filings_mapping = {
-    "symbol" : "ticker",
-    "title": "headline",
-    "url": "link",
-    "timestamp": "time_ms"
+finnhub_filings_mapping = {
+    
 }
 
