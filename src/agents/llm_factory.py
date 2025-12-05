@@ -4,19 +4,21 @@ from langchain_community.chat_models import ChatPerplexity
 # from langchain_huggingface import HuggingFaceChat, HuggingFaceHubChat
 from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 from langchain_groq import ChatGroq
-from config.settings import settings
+from config.settings import LLMSettings
 
 LLMProvider = Literal["openai", "gemini", "claude", "perplexity","huggingface", "groq"]
+
+llm_settings = LLMSettings()
 
 safety_model = ChatGroq(
                 model="llama-3.1-8b-instant",
                 temperature=0.7,
                 max_tokens=2048,
-                api_key=settings.llm.GROQ_API_KEY,
+                api_key=llm_settings.get_key("groq"),
             )
 
 def get_llm(
-    provider: LLMProvider = "groq",
+    provider: LLMProvider = "perplexity",
     model: str = None,
     temperature: float = 0.3,
     **kwargs
@@ -33,12 +35,12 @@ def get_llm(
         return ChatOpenAI(
             model=model or "gpt-4o-mini",
             temperature=temperature,
-            api_key=settings.llm.OPENAI_API_KEY,
+            api_key=llm_settings.get_key("openai"),
             **kwargs
         )
     
     elif provider == "perplexity":
-        api_key = settings.llm.PPLX_API_KEY
+        api_key = llm_settings.get_key("perplexity")
         # Use correct model name
         model_name = model or "sonar"
         
@@ -55,7 +57,7 @@ def get_llm(
             print(f"[ERROR] Failed to create Perplexity client: {e}")
 
     elif provider == "huggingface":
-        hf_api_key = settings.llm.HUGGING_FACE_API_KEY
+        hf_api_key = llm_settings.get_key("huggingface")
         if not hf_api_key:
             raise ValueError("Hugging Face API key is not set in the environment.")
 
@@ -77,7 +79,7 @@ def get_llm(
                 model="llama-3.1-8b-instant",
                 temperature=0.7,
                 max_tokens=2048,
-                api_key=settings.llm.GROQ_API_KEY,
+                api_key=llm_settings.get_key("groq"),
             )
     else:
         raise ValueError(f"Unknown provider: {provider}")
