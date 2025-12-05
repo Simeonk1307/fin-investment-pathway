@@ -1,6 +1,6 @@
 import time
 from src.layers.bronze_layer.collectors.reddit_socials import send_to_kafka
-from dumps.producers.tavily_news import scrape_tavily_web
+from src.layers.bronze_layer.collectors.tavily_news import scrape_tavily_web
 import os
 from dotenv import load_dotenv
 

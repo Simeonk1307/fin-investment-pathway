@@ -3,7 +3,7 @@ import json
 import aiohttp
 import datetime
 from aiohttp.client_ws import ClientWebSocketResponse
-from src.utils.connectors.base_websocket_subject import AIOHttpWebsocketSubject
+from src.layers.bronze_layer.base.base_websocket_subject import AIOHttpWebsocketSubject
 from src.layers.bronze_layer.event_envelope import create_event_envelope
 
 
