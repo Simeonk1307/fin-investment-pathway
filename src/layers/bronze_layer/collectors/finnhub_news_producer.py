@@ -1,16 +1,21 @@
-import os, json, time, datetime, logging, finnhub
-import signal, sys
+import os
+import time
+import datetime
+import logging
+import finnhub
+import requests
 from typing import List, Dict
+from dotenv import load_dotenv
 from src.layers.bronze_layer.base.base_producer import BaseProducer
 from src.layers.bronze_layer.event_envelope import create_event_envelope
-from dotenv import load_dotenv
-import requests
 
 load_dotenv()
 
+_RETRY_DELAYS = (5, 10, 20)
+_TIMEOUT_CONFIGS = ((10, 30), (15, 40), (20, 50))
+
 
 class FinnHubNewsProducer(BaseProducer):
-
     MAX_DEDUPE_CACHE = 50_000
     MAX_CONSECUTIVE_ERRORS = 5
     ERROR_BACKOFF_SECONDS = 30
@@ -21,419 +26,190 @@ class FinnHubNewsProducer(BaseProducer):
         topic: str,
         producer_config: Dict,
         tickers: List[str],
-        api_key: str = None,
+        api_key: str | None = None,
         poll_interval: int = 120,
         lookback_days: int = 1,
-    ):
+        debug: bool = False,
+        debug_writer=None,
+    ) -> None:
         super().__init__(logger=logger, topic=topic, producer_config=producer_config)
-        
         self.tickers = tickers
         self.poll_interval = poll_interval
         self.lookback_days = lookback_days
         self._running = True
         self.consecutive_errors = 0
         self.last_successful_fetch = time.time()
-
+        self.debug = debug
+        self.debug_writer = debug_writer or (lambda *_, **__: None)
         self.api_key = api_key or os.getenv("FINNHUB_API_KEY")
         if not self.api_key:
-            logger.critical("[FinnHub:Config] FINNHUB_API_KEY missing")
+            logger.critical("FINNHUB_API_KEY missing")
             raise ValueError("FINNHUB_API_KEY required")
-        
         self.client = finnhub.Client(api_key=self.api_key)
         self.seen_ids = set()
-        self.last_ts = 0
+        self._ticker_jitter = {t: 0.1 + 0.002 * (hash(t) % 100) for t in tickers}
+        self._retry_jitter = {t: 0.5 * (hash(t) % 10) for t in tickers}
+        if debug:
+            self.debug_writer("news", "startup", {
+                "topic": topic, "tickers": tickers, "poll_interval": poll_interval,
+                "lookback_days": lookback_days, "producer_config": producer_config,
+            })
+        logger.info("=" * 80)
+        logger.info("[FinnHub] Initialized topic=%s tickers=%s poll=%ss lookback=%s debug=%s",
+                    topic, tickers, poll_interval, lookback_days, debug)
+        logger.info("=" * 80)
 
-        self.logger.info("=" * 80)
-        self.logger.info("[FinnHub] Producer initialized")
-        self.logger.info("  Topic         : %s", topic)
-        self.logger.info("  Tickers       : %s", tickers)
-        self.logger.info("  Poll Interval : %s sec", poll_interval)
-        self.logger.info("  Lookback Days : %s", lookback_days)
-        self.logger.info("=" * 80)
-
-
-    # -------------------------------------------------------------------------
-    # Fetch news for all tickers with enhanced error handling
-    # -------------------------------------------------------------------------
     def _fetch_news(self) -> List[Dict]:
         if self.consecutive_errors >= self.MAX_CONSECUTIVE_ERRORS:
-            self.logger.error(
-                "[FinnHub:Fetch] Too many consecutive errors (%s), backing off for %s seconds",
-                self.consecutive_errors, self.ERROR_BACKOFF_SECONDS
-            )
+            self.logger.error("Too many errors (%s), backoff %ss",
+                              self.consecutive_errors, self.ERROR_BACKOFF_SECONDS)
             time.sleep(self.ERROR_BACKOFF_SECONDS)
             self.consecutive_errors = 0
 
         today = datetime.date.today()
-        from_date = today - datetime.timedelta(days=self.lookback_days)
-        from_str = from_date.strftime("%Y-%m-%d")
-        to_str = today.strftime("%Y-%m-%d")
-        
+        from_str = (today - datetime.timedelta(days=self.lookback_days)).isoformat()
+        to_str = today.isoformat()
+
         all_articles = []
-        successful_fetches = 0
-        failed_tickers = []
-        
+        successful = 0
+        failed = []
+        client = self.client
+        logger = self.logger
+        ticker_jitter = self._ticker_jitter
+        retry_jitter = self._retry_jitter
+
         for ticker in self.tickers:
-            if not self._running:  # Changed from self.shutting_down
+            if not self._running:
                 break
-                
-            max_retries = 3
-            retry_delay = 5
-            
-            for retry in range(max_retries):
+            for retry in range(3):
                 try:
-                    # Configure session with longer timeouts for retries
-                    if retry > 0:
-                        # Increase timeout on retries
-                        self.client._session.timeout = (10 + (retry * 5), 30 + (retry * 10))
-                        self.logger.debug(
-                            "[FinnHub:Retry] Attempt %s/%s for ticker=%s with timeout=%s",
-                            retry + 1, max_retries, ticker, self.client._session.timeout
-                        )
-                    
-                    articles = self.client.company_news(ticker, _from=from_str, to=to_str)
-                    
+                    if retry:
+                        client._session.timeout = _TIMEOUT_CONFIGS[retry]
+                    articles = client.company_news(ticker, _from=from_str, to=to_str)
                     if articles:
                         all_articles.extend(articles)
-                        successful_fetches += 1
-                        self.logger.info(
-                            "[FinnHub:Fetch] ticker=%s articles=%s retry=%s",
-                            ticker, len(articles), retry if retry > 0 else "initial"
-                        )
-                    else:
-                        self.logger.debug(
-                            "[FinnHub:Fetch] ticker=%s no articles found",
-                            ticker
-                        )
-                    
-                    # Reset timeout to default after successful request
-                    self.client._session.timeout = (10, 30)
-                    
-                    # Rate limiting with jitter
-                    time.sleep(0.1 + (0.02 * (hash(ticker) % 10) / 10))
-                    break  # Success, exit retry loop
-                    
-                except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as e:
+                        successful += 1
+                        logger.info("[Fetch] %s: %d articles", ticker, len(articles))
+                    if retry:
+                        client._session.timeout = _TIMEOUT_CONFIGS[0]
+                    time.sleep(ticker_jitter[ticker])
+                    break
+                except (requests.exceptions.ReadTimeout,
+                        requests.exceptions.ConnectTimeout,
+                        requests.exceptions.ConnectionError) as e:
                     self.consecutive_errors += 1
-                    
-                    if retry < max_retries - 1:
-                        # Exponential backoff with jitter
-                        backoff = retry_delay * (2 ** retry) + (0.5 * (hash(ticker) % 10))
-                        self.logger.warning(
-                            "[FinnHub:Timeout] ticker=%s attempt=%s/%s error=%s backing off %s seconds",
-                            ticker, retry + 1, max_retries, type(e).__name__, round(backoff, 1)
-                        )
-                        time.sleep(backoff)
+                    if retry < 2:
+                        time.sleep(_RETRY_DELAYS[retry] + retry_jitter[ticker])
                         continue
-                    else:
-                        failed_tickers.append(ticker)
-                        self.logger.error(
-                            "[FinnHub:Timeout] ticker=%s failed after %s attempts error=%s",
-                            ticker, max_retries, e
-                        )
-                        break
-                        
-                except requests.exceptions.ConnectionError as e:
-                    self.consecutive_errors += 1
-                    
-                    if retry < max_retries - 1:
-                        backoff = retry_delay * (2 ** retry) + (0.5 * (hash(ticker) % 10))
-                        self.logger.warning(
-                            "[FinnHub:Connection] ticker=%s attempt=%s/%s error=%s backing off %s seconds",
-                            ticker, retry + 1, max_retries, type(e).__name__, round(backoff, 1)
-                        )
-                        time.sleep(backoff)
-                        continue
-                    else:
-                        failed_tickers.append(ticker)
-                        self.logger.error(
-                            "[FinnHub:Connection] ticker=%s failed after %s attempts error=%s",
-                            ticker, max_retries, e
-                        )
-                        break
-                        
+                    failed.append(ticker)
+                    logger.error("[Network] %s: %s", ticker, type(e).__name__)
+                    break
                 except finnhub.FinnhubAPIException as e:
                     self.consecutive_errors += 1
-                    
-                    if "Too many requests" in str(e):
-                        self.logger.warning(
-                            "[FinnHub:RateLimit] ticker=%s consecutive_errors=%s",
-                            ticker, self.consecutive_errors
-                        )
-                        time.sleep(30 * self.consecutive_errors)  # Exponential backoff
-                        break  # Don't retry rate limits immediately
-                    elif "Invalid API key" in str(e):
-                        self.logger.critical(
-                            "[FinnHub:Auth] Invalid API key for ticker=%s",
-                            ticker
-                        )
+                    msg = str(e)
+                    if "Invalid API key" in msg:
+                        logger.critical("[Auth] Invalid API key")
                         self.stop()
                         return []
-                    elif "API limit reached" in str(e):
-                        self.logger.error(
-                            "[FinnHub:Limit] API limit reached for ticker=%s",
-                            ticker
-                        )
-                        time.sleep(60)
-                        break  # Don't retry immediately
-                    else:
-                        self.logger.warning(
-                            "[FinnHub:API] ticker=%s error=%s consecutive_errors=%s",
-                            ticker, e, self.consecutive_errors
-                        )
-                        time.sleep(5 * self.consecutive_errors)
-                        break  # Don't retry other API errors
-                        
+                    time.sleep(30 if "Too many requests" in msg else
+                               60 if "API limit reached" in msg else
+                               5 * self.consecutive_errors)
+                    break
                 except Exception as e:
                     self.consecutive_errors += 1
-                    self.logger.error(
-                        "[FinnHub:FetchError] ticker=%s error=%s consecutive_errors=%s",
-                        ticker, e, self.consecutive_errors,
-                        exc_info=(retry == max_retries - 1)  # Full traceback only on final failure
-                    )
-                    
-                    if retry < max_retries - 1:
-                        backoff = retry_delay * (2 ** retry) + (0.5 * (hash(ticker) % 10))
-                        time.sleep(backoff)
+                    logger.error("[FetchError] %s: %s", ticker, e, exc_info=(retry == 2))
+                    if retry < 2:
+                        time.sleep(_RETRY_DELAYS[retry])
                         continue
-                    else:
-                        failed_tickers.append(ticker)
-                        break
-        
-        # Reset error counter if we had successful fetches
-        if successful_fetches > 0:
+                    failed.append(ticker)
+                    break
+
+        if successful:
             self.consecutive_errors = 0
             self.last_successful_fetch = time.time()
-        
-        # Log summary
+
         if all_articles:
-            self.logger.info(
-                "[FinnHub:Fetch] total_articles=%s successful=%s/%s failed=%s",
-                len(all_articles), successful_fetches, len(self.tickers), len(failed_tickers)
-            )
-        else:
-            if failed_tickers:
-                self.logger.warning(
-                    "[FinnHub:Fetch] No articles found. Failed tickers: %s",
-                    failed_tickers
-                )
-            else:
-                self.logger.warning(
-                    "[FinnHub:Fetch] No articles found for any ticker"
-                )
-            
-        # Dedupe cache safety reset
+            logger.info("[Fetch] total=%d ok=%d fail=%d", len(all_articles), successful, len(failed))
+        elif failed:
+            logger.warning("[Fetch] No articles. Failed=%s", failed)
+
         if len(self.seen_ids) > self.MAX_DEDUPE_CACHE:
-            self.logger.warning(
-                "[FinnHub:Dedupe] Cache exceeded threshold (%s). Resetting.",
-                self.MAX_DEDUPE_CACHE
-            )
             self.seen_ids = set()
-            
+
         return all_articles
 
-    # -------------------------------------------------------------------------
-    # Publish single article with enhanced error handling
-    # -------------------------------------------------------------------------
     def _publish_article(self, article: Dict) -> bool:
         art_id = article.get("id")
-        ts = article.get("datetime", 0)
-        
-        if not art_id:
-            self.logger.warning(
-                "[FinnHub:Publish] Article missing ID, skipping"
-            )
+        if not art_id or art_id in self.seen_ids:
             return False
-        
-        if not ts:
-            self.logger.warning(
-                "[FinnHub:Publish] Article missing timestamp art_id=%s",
-                art_id
-            )
+        headline = article.get("headline")
+        if not headline or not article.get("url"):
             return False
-        
-        if art_id in self.seen_ids:
-            self.logger.debug(
-                "[FinnHub:Publish] Duplicate article art_id=%s",
-                art_id
-            )
-            return False
-        
-        if ts <= self.last_ts:
-            self.logger.debug(
-                "[FinnHub:Publish] Old article art_id=%s ts=%s last_ts=%s",
-                art_id, ts, self.last_ts
-            )
-            return False
-        
+        if not article.get("summary"):
+            article["summary"] = headline[:200] + "..."
         try:
-            # Validate article structure - only require essential fields
-            required_fields = ["headline", "url"]
-            missing_required = [field for field in required_fields if not article.get(field)]
-            
-            if missing_required:
-                self.logger.warning(
-                    "[FinnHub:Publish] Missing required fields art_id=%s missing=%s",
-                    art_id, missing_required
-                )
-                return False
-            
-            # Check for optional fields and log at debug level if missing
-            optional_fields = ["summary", "source", "image", "related"]
-            missing_optional = [field for field in optional_fields if not article.get(field)]
-            
-            if missing_optional:
-                self.logger.debug(
-                    "[FinnHub:Publish] Missing optional fields art_id=%s missing=%s",
-                    art_id, missing_optional
-                )
-            
-            # Add placeholder for missing summary if needed
-            if not article.get("summary"):
-                article["summary"] = article.get("headline", "")[:200] + "..."
-            
-            event = create_event_envelope(
-                payload=article,
-                source="finnhub",
-                source_type="rest"
-            )
-            
-            if self.send(event, key=str(art_id)):
+            event = create_event_envelope(article, source="finnhub", source_type="rest")
+            if self.send(event, key="finnhub"):
                 self.seen_ids.add(art_id)
-                self.last_ts = max(self.last_ts, ts)
-                self.logger.debug(
-                    "[FinnHub:Publish] Success art_id=%s ts=%s headline=%s",
-                    art_id, ts, article.get("headline", "N/A")[:50]
-                )
                 return True
-            else:
-                self.logger.error(
-                    "[FinnHub:Publish] Send failed art_id=%s",
-                    art_id
-                )
-                return False
-                
-        except json.JSONEncodeError as e:
-            self.logger.error(
-                "[FinnHub:Publish] JSON encode error art_id=%s error=%s",
-                art_id, e
-            )
-            return False
-            
-        except KeyError as e:
-            self.logger.error(
-                "[FinnHub:Publish] Missing key art_id=%s error=%s",
-                art_id, e
-            )
-            return False
-            
         except Exception as e:
-            self.logger.error(
-                "[FinnHub:Publish] Failed art_id=%s error=%s",
-                art_id, e,
-                exc_info=True
-            )
-            return False
+            self.logger.error("[PublishError] %s: %s", art_id, e)
+        return False
 
-
-    # -------------------------------------------------------------------------
-    # Main producer loop with enhanced error handling
-    # -------------------------------------------------------------------------
-    def _run_loop(self):
+    def _run_loop(self) -> None:
         iteration = 0
         total_sent = 0
         total_errors = 0
+        logger = self.logger
+        poll_interval = self.poll_interval
+        tickers_half = len(self.tickers) // 2
 
-        self.logger.info("[FinnHub:Loop] Starting producer loop...")
+        logger.info("[Loop] Starting producer loop...")
 
         while self._running:
             iteration += 1
-            start_time = time.time()
+            start = time.time()
             new_events = 0
             loop_errors = 0
 
             try:
                 articles = self._fetch_news()
-                
                 if articles:
                     articles.sort(key=lambda x: x.get("datetime", 0))
-                    
-                    for article in articles:
+                    for a in articles:
                         try:
-                            if self._publish_article(article):
+                            if self._publish_article(a):
                                 new_events += 1
-                                total_sent += 1
-                        except Exception as e:
+                        except Exception:
                             loop_errors += 1
-                            total_errors += 1
-                            self.logger.error(
-                                "[FinnHub:Loop] Article processing error error=%s",
-                                e
-                            )
-                
-                loop_duration = time.time() - start_time
-                
-                # Health check logging
-                if time.time() - self.last_successful_fetch > 3600:  # 1 hour
-                    self.logger.warning(
-                        "[FinnHub:Health] No successful fetch in last hour"
-                    )
-                
-                self.logger.info(
-                    "[FinnHub:Loop] iter=%s new=%s total=%s errors=%s total_errors=%s duration=%.2fs",
-                    iteration, new_events, total_sent, loop_errors, total_errors, loop_duration
-                )
 
-                # Adaptive sleep based on performance
-                if loop_errors > len(self.tickers) // 2:
-                    extra_sleep = min(60, self.poll_interval * 2)
-                    self.logger.warning(
-                        "[FinnHub:Loop] High error rate, extending sleep to %s seconds",
-                        extra_sleep
-                    )
-                    time.sleep(extra_sleep)
-                else:
-                    time.sleep(self.poll_interval)
+                total_sent += new_events
+                total_errors += loop_errors
+                duration = time.time() - start
+
+                if time.time() - self.last_successful_fetch > 3600:
+                    logger.warning("[Health] No successful fetch in 1 hour")
+
+                logger.info("[Loop] i=%d new=%d total=%d err=%d dur=%.2fs",
+                            iteration, new_events, total_sent, total_errors, duration)
+
+                time.sleep(min(60, poll_interval * 2) if loop_errors > tickers_half else poll_interval)
 
             except KeyboardInterrupt:
-                self.logger.info("[FinnHub:Loop] Keyboard interrupt received")
                 self.stop()
-
             except SystemExit:
-                self.logger.info("[FinnHub:Loop] System exit received")
                 raise
-
-            except MemoryError as e:
-                self.logger.critical(
-                    "[FinnHub:Loop] Memory error: %s. Clearing cache and restarting.",
-                    e
-                )
+            except MemoryError:
+                logger.critical("[MemoryError]")
                 self.seen_ids = set()
                 time.sleep(60)
-                
             except Exception as e:
                 total_errors += 1
-                self.logger.error(
-                    "[FinnHub:LoopError] Unexpected error error=%s total_errors=%s",
-                    e, total_errors,
-                    exc_info=True
-                )
-                
-                # Exponential backoff on repeated errors
-                backoff_time = min(300, 5 * (2 ** min(total_errors, 6)))  # Max 5 minutes
-                self.logger.warning(
-                    "[FinnHub:LoopError] Backing off for %s seconds",
-                    backoff_time
-                )
-                time.sleep(backoff_time)
+                logger.error("[LoopError] %s", e, exc_info=True)
+                time.sleep(min(300, 5 << min(total_errors, 6)))
 
-        self.logger.info(
-            "[FinnHub:Shutdown] Producer stopped. Stats: iterations=%s total_sent=%s total_errors=%s",
-            iteration, total_sent, total_errors
-        )
+        logger.info("[Shutdown] iters=%d sent=%d errors=%d", iteration, total_sent, total_errors)
 
-
-    # -------------------------------------------------------------------------
-    def stop(self):
-        self.logger.info("[FinnHub:Stop] Shutdown signal received.")
+    def stop(self) -> None:
         self._running = False
+        self.logger.info("[Stop] Shutdown signal received.")

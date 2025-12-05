@@ -1,7 +1,7 @@
 import pathway as pw
 import os
 from dotenv import load_dotenv
-from src.schemas.silver_news_schema import FinnHubNewsSchema, finnhub_news_mapping
+from src.schemas.silver_schemas import FinnHubNewsSchema, finnhub_news_mapping
 from src.utils.common import common_config, profiles
 from src.utils.casting import create_schema_parser, cast_to_str, cast_to_int, unpack_from_schema, dedupe_from_schema
 from src.KnowledgeGraph.kg_updater import KGNewsUpdater, Neo4jConfig

@@ -1,0 +1,1 @@
+PIPELINE=NEWS python3 -m src.layers.silver_layer.pipeline

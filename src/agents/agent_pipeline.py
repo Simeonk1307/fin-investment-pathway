@@ -13,6 +13,7 @@ from src.agents.guard_rail import safety_guardrail_node
 from datetime import datetime
 import psutil
 from src.agents.finbert import FinBertSentimentAnalyzer
+from src.schemas.silver_schemas import FinnHubNewsSchema
  
 #if ctrl+c is pressed, stop the program
 import signal
@@ -24,16 +25,36 @@ signal.signal(signal.SIGINT, signal_handler)
 #even in pathway run, we can catch ctrl+c
 # ============================================================================
 
-class FinnHubNewsSchema(pw.Schema):
-    id: int
-    # news_id: int  # The 137618953 field
-    headline: str
-    description: str
-    url: str
-    source: str
-    published_at: str
-    category: str
-    company: str
+# class FinnHubNewsSchema(pw.Schema):
+#     id: int
+#     # news_id: int  # The 137618953 field
+#     headline: str
+#     description: str
+#     url: str
+#     source: str
+#     published_at: str
+#     category: str
+#     company: str
+
+# class FinnHubNewsSchema(pw.Schema):
+#     news_id: int
+#     symbol: str
+#     timestamp: int
+#     source: str
+#     category: str
+#     title: str
+#     content: str
+#     url: str
+#     image_url: str
+        
+# finnhub_news_mapping = {
+#     "news_id": "id",
+#     "symbol": "related",
+#     "timestamp": "datetime",
+#     "title": "headline",
+#     "content": "summary",
+#     "image_url": "image",
+# }
 
 
 # ============================================================================
@@ -145,30 +166,30 @@ def run_pipeline(
 
     
     # Extract ticker and prepare minimal state
-    news_analysis_table = news_table.groupby(pw.this.company).reduce(
-        ticker=pw.this.company,
-        articles = pw.reducers.tuple(merge(pw.this.headline, pw.this.description)),
-        sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.headline, pw.this.description)),
+    news_analysis_table = news_table.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        articles = pw.reducers.tuple(merge(pw.this.title, pw.this.content)),
+        sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.title, pw.this.content)),
     )
 
     agents_input = news_analysis_table.select(
-        ticker=pw.this.ticker,
+        symbol=pw.this.symbol,
         news_articles=pw.this.articles,
         news_sentiment_scores=pw.this.sentimental_scores,
     )
     agents_output = agents_input.select(
-        ticker=pw.this.ticker,
+        symbol=pw.this.symbol,
         news_sentiment_scores=pw.this.news_sentiment_scores,
         analysis=pw.apply(
             process_ticker,
-            pw.this.ticker,
+            pw.this.symbol,
             pw.this.news_articles,
             pw.this.news_sentiment_scores)
     )
     
     # Process through LangGraph
     results = agents_output.select(
-        ticker=pw.this.ticker,
+        symbol=pw.this.symbol,
         news_sentiment_scores=pw.this.news_sentiment_scores,
         prediction=get_element(pw.this.analysis, "prediction"),
         confidence=get_element(pw.this.analysis, "confidence"),
