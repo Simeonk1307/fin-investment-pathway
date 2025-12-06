@@ -220,3 +220,4 @@ debug_output
 config/trial_settings.py
 /models
 redpanda-quickstart
+/modified_models

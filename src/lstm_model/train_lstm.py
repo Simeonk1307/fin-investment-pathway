@@ -76,35 +76,30 @@ FEATURE_COLUMNS = [
 # ═══════════════════════════════════════════════════════════════════════════
 
 def compute_technical_indicators(df):
-    """
-    Compute technical indicators for stock data.
-    
-    TO ADD NEW INDICATORS:
-    1. Add calculation here
-    2. Add column name to FEATURE_COLUMNS above
-    3. Retrain - that's it!
-    """
     df = df.copy()
-    df['Return'] = df['Close'].pct_change()
+    df['Return'] = df['Close'].pct_change().fillna(0)  # NEW
+    
     # Simple Moving Averages
     df['SMA_5'] = df['Close'].rolling(window=5).mean()
+    df['SMA_10'] = df['Close'].rolling(window=10).mean()  # NEW
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
+    df['SMA_30'] = df['Close'].rolling(window=30).mean()  # NEW
     df['SMA_50'] = df['Close'].rolling(window=50).mean()
     
-    # RSI (Relative Strength Index)
+    # RSI (existing code)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / (loss + 1e-10)
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # MACD (Moving Average Convergence Divergence)
+    # MACD (existing code)
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
     df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     
-    # Bollinger Bands
+    # Bollinger Bands (existing code)
     df['BB_Middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
     df['BB_Upper'] = df['BB_Middle'] + (2 * bb_std)
@@ -112,8 +107,9 @@ def compute_technical_indicators(df):
     
     # Momentum
     df['Momentum'] = df['Close'].pct_change(periods=5)
+    df['Momentum5'] = df['Close'].pct_change(periods=5)  # NEW (alias)
     
-    # Volume Ratio
+    # Volume Ratio (existing code)
     df['Volume_Ratio'] = df['Volume'] / df['Volume'].rolling(window=20).mean()
     
     # Fill NaN values
@@ -299,10 +295,11 @@ def train_model(ticker):
     print(f"  🔥 Training on {device}...")
     best_loss = float('inf')
     patience_counter = 0
-    
+    losses=[]
     for epoch in range(EPOCHS):
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
         test_loss = evaluate(model, test_loader, criterion, device)
+        losses.append((train_loss,test_loss))
         
         # Early stopping
         if test_loss < best_loss:
@@ -311,6 +308,7 @@ def train_model(ticker):
             
             # Save best model
             os.makedirs(MODEL_DIR, exist_ok=True)
+            
             checkpoint = {
                 'model_state_dict': model.state_dict(),
                 'input_size': input_size,
@@ -339,9 +337,12 @@ def train_model(ticker):
     # Save scaler separately
     joblib.dump(scaler, f"{MODEL_DIR}/{ticker}_scaler.pkl")
     
+    mean_loss=np.mean([x[1] for x in losses])
+    print(f"  📈 Training complete for {ticker}!")
     print(f"  ✅ Model saved: {MODEL_DIR}/{ticker}_lstm.pt")
     print(f"  ✅ Scaler saved: {MODEL_DIR}/{ticker}_scaler.pkl")
     print(f"  ✅ Best test loss: {best_loss:.6f}")
+    print(f"  ℹ️  Mean test loss: {mean_loss:.6f}")
     
     return {
         'ticker': ticker,
