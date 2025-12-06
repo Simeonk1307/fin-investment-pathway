@@ -1,0 +1,158 @@
+name: redpanda-cluster
+networks:
+  redpanda_network:
+    driver: bridge
+
+volumes:
+  redpanda-0:
+  redpanda-1:
+  redpanda-2:
+  minio:
+
+services:
+  ##################
+  # Redpanda Brokers
+  ##################
+  redpanda-0:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
+    container_name: redpanda-0
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda-0:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda-0:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda-0:33145
+      - --advertise-rpc-addr redpanda-0:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=info
+    networks:
+      - redpanda_network
+    environment:
+      RP_BOOTSTRAP_USER: "superuser:secretpassword"
+    volumes:
+      - redpanda-0:/var/lib/redpanda/data
+      - ./bootstrap.yml:/etc/redpanda/.bootstrap.yaml
+    ports:
+      - 18081:18081
+      - 18082:18082
+      - 19092:19092
+      - 19644:9644
+
+  redpanda-1:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
+    container_name: redpanda-1
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:29092
+      - --advertise-kafka-addr internal://redpanda-1:9092,external://localhost:29092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:28082
+      - --advertise-pandaproxy-addr internal://redpanda-1:8082,external://localhost:28082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:28081
+      - --rpc-addr redpanda-1:33145
+      - --advertise-rpc-addr redpanda-1:33145
+      - --mode dev-container
+      - --smp 1
+      - --seeds redpanda-0:33145
+    networks:
+      - redpanda_network
+    environment:
+      RP_BOOTSTRAP_USER: "superuser:secretpassword"
+    volumes:
+      - redpanda-1:/var/lib/redpanda/data
+
+  redpanda-2:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
+    container_name: redpanda-2
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:39092
+      - --advertise-kafka-addr internal://redpanda-2:9092,external://localhost:39092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:38082
+      - --advertise-pandaproxy-addr internal://redpanda-2:8082,external://localhost:38082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:38081
+      - --rpc-addr redpanda-2:33145
+      - --advertise-rpc-addr redpanda-2:33145
+      - --mode dev-container
+      - --smp 1
+      - --seeds redpanda-0:33145
+    networks:
+      - redpanda_network
+    environment:
+      RP_BOOTSTRAP_USER: "superuser:secretpassword"
+    volumes:
+      - redpanda-2:/var/lib/redpanda/data
+
+  ####################
+  # Redpanda Console #
+  ####################
+  console:
+    container_name: redpanda-console
+    image: docker.redpanda.com/redpandadata/console:v3.3.2
+    networks:
+      - redpanda_network
+    entrypoint: /app/console
+    environment:
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda-0:9092"]
+          sasl:
+            enabled: true
+            username: superuser
+            password: secretpassword
+            mechanism: SCRAM-SHA-256
+        schemaRegistry:
+          enabled: true
+          urls: ["http://redpanda-0:8081"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda-0:9644"]
+            authentication:
+              basic:
+                username: superuser
+                password: secretpassword
+    ports:
+      - 8080:8080
+    depends_on:
+      - redpanda-0
+
+  ####################
+  # MinIO (optional)
+  ####################
+  minio:
+    container_name: minio
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: redpandaTieredStorage7
+    volumes:
+      - minio:/data
+    networks:
+      - redpanda_network
+    ports:
+      - 9000:9000
+      - 9001:9001
+
+  ####################
+  # lgtm
+  ####################
+  lgtm:
+    container_name: lgtm
+    image: grafana/otel-lgtm:latest
+    networks:
+      - redpanda_network
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+      - "3100:3100"
+      - "3200:3200"
+    depends_on:
+      - redpanda-0

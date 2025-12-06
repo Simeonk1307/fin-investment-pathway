@@ -9,7 +9,7 @@ class AgentState(TypedDict):
     market_data: dict
     news_data: dict
     filings_data:dict
-    social_data:dict
+    socials_data:dict
 
     
     # Agent outputs
@@ -39,6 +39,12 @@ def data_ingestion_node(state: AgentState) -> AgentState:
     
     if ('news_sentiment_scores' not in state['news_data']):
         raise KeyError("Missing news sentiment scores in state")
+    
+    if ('socials_articles' not in state['socials_data']) :
+        raise KeyError("Missing socials_articles in state")
+    
+    if ('socials_sentiment_scores' not in state['socials_data']):
+        raise KeyError("Missing socials sentiment scores in state")
     
 
     return None

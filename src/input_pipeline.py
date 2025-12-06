@@ -6,10 +6,10 @@ import signal
 import logging
 import pathway as pw
 from dotenv import load_dotenv
-from src.schemas.silver_schemas import FinnHubNewsSchema
+from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
-from src.utils.reducers import SentimentScoreAccumulator
+from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimentScoreAccumulator
 def debug_statement(*args):
     import time
     logger.info(f"[DEBUG " + " ".join(str(a) for a in args))
@@ -18,8 +18,6 @@ def debug_statement(*args):
 
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-SILVER_TOPIC = os.getenv("REDPANDA_SILVER_NEWS_TOPIC")
-GOLD_TOPIC = os.getenv("REDPANDA_GOLD_NEWS_TOPIC", "gold.news.sentiment")
 finbert_analyzer = FinBertSentimentAnalyzer()
 load_dotenv()
 
@@ -150,27 +148,31 @@ def get_weight_timestamp(timestamp: int) -> float:
     return max(weight, 0.0001)  # Minimum weight
 
 def news_input_pipeline()->pw.Table:
-    suffix = f"-{int(time.time())}" if DEBUG else ""
-    consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"finbert-sentiment-news{suffix}",
-        "auto.offset.reset": "earliest",
-    }
+    TEMP = "NEWS"
+    SCHEMA = FinnHubNewsSchema
+    SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
     
 
+    suffix = f"-{int(time.time())}" if DEBUG else ""
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
+        "auto.offset.reset": "earliest",
+    }
+
     if SILVER_TOPIC is None:
-        logger.error("[GOLD:NEWS] REDPANDA_SILVER_NEWS_TOPIC environment variable not set.")
+        logger.error(f"[GOLD:{TEMP}] REDPANDA_SILVER_{TEMP}_TOPIC environment variable not set.")
         sys.exit(1)
 
-    logger.info(f"[GOLD:NEWS] Reading from {SILVER_TOPIC}")
+    logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
 
-    news = pw.io.redpanda.read(
+    silver = pw.io.redpanda.read(
         rdkafka_settings=consumer,
         topic=SILVER_TOPIC,
-        schema=FinnHubNewsSchema,
+        schema=SCHEMA,
         format="json",
         autocommit_duration_ms=1000,
     )
-    enriched = news.select(
+    enriched = silver.select(
         timestamp=pw.this.timestamp,
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
@@ -178,51 +180,64 @@ def news_input_pipeline()->pw.Table:
         weight=get_weight_timestamp(pw.this.timestamp)
     )
 
-    news_table = enriched.groupby(pw.this.symbol).reduce(
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
+
+    final = enriched.groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
         news_articles=pw.reducers.tuple(pw.this.merged),
-        news_sentiment_scores=pw.reducers.udf_reducer(SentimentScoreAccumulator)(pw.this.sentiment, pw.this.weight)
+        news_sentiment_scores=pw.reducers.udf_reducer(WeightedSentimentScoreAccumulator)(pw.this.sentiment, pw.this.weight)
     )
 
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
 
-    return news_table
+
+    return final
 
 def social_input_pipeline()->pw.Table:
+    TEMP = "SOCIALS"
+    SCHEMA = SocialsSchema
+    SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
+    
+
     suffix = f"-{int(time.time())}" if DEBUG else ""
     consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"finbert-sentiment-socials{suffix}",
+        "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
         "auto.offset.reset": "earliest",
     }
     
 
     if SILVER_TOPIC is None:
-        logger.error("[GOLD:NEWS] REDPANDA_SILVER_NEWS_TOPIC environment variable not set.")
+        logger.error(f"[GOLD:{TEMP}] REDPANDA_SILVER_{TEMP}_TOPIC environment variable not set.")
         sys.exit(1)
 
-    logger.info(f"[GOLD:NEWS] Reading from {SILVER_TOPIC}")
+    logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
 
-    news = pw.io.redpanda.read(
+    silver = pw.io.redpanda.read(
         rdkafka_settings=consumer,
         topic=SILVER_TOPIC,
-        schema=FinnHubNewsSchema,
+        schema=SCHEMA,
         format="json",
         autocommit_duration_ms=1000,
     )
-
-    enriched = news.select(
+    enriched = silver.select(
+        # timestamp=pw.this.timestamp,
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
         sentiment=get_sentiment_score(pw.this.title, pw.this.content),
+        # weight=get_weight_timestamp(pw.this.timestamp)
     )
 
-    news_table = enriched.groupby(pw.this.symbol).reduce(
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
+
+    final = enriched.groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
-        news_articles=pw.reducers.tuple(pw.this.merged),
-        news_sentiment_scores=pw.reducers.tuple(pw.this.sentiment),
+        socials_articles=pw.reducers.tuple(pw.this.merged),
+        socials_sentiment_scores=pw.reducers.udf_reducer(SimpleSentimentScoreAccumulator)(pw.this.sentiment)
     )
 
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
 
-    return news_table
+    return final
 
 
 
@@ -233,6 +248,8 @@ def social_input_pipeline()->pw.Table:
 if __name__ == "__main__":
     os.makedirs("debug_output", exist_ok=True)
     news_table= news_input_pipeline()
+    socials_table = social_input_pipeline()
     pw.io.csv.write(news_table, "debug_output/news_sentiment.csv")
+    pw.io.csv.write(socials_table, "debug_output/socials_sentiment.csv")
     # pw.io.jsonlines.write(news_table, "debug_output/news_sentiment.jsonl")
     pw.run()

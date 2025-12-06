@@ -4,12 +4,23 @@ from src.agents.agent_pipeline import create_graph
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 import os
+import logging
+
 load_dotenv()
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: tuple[float]):
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
+logging.getLogger("librdkafka").setLevel(logging.CRITICAL)
+logging.getLogger("confluent_kafka").setLevel(logging.CRITICAL)
+
+def process_ticker(ticker: str,
+                   news_articles: tuple[str],news_sentiment_scores: tuple[float],
+                   socials_articles: tuple[str], socials_sentiment_scores: tuple[float]):
+
+    logger.info("inside")
     graph = create_graph()
     state = {
         "ticker": ticker,
@@ -26,9 +37,9 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
 
         },
 
-        "social_data":{
-            # check social data
-            # check social_analyst and rewrite prompt and define SocialAnalysisResult
+        "socials_data":{
+            "socials_articles": socials_articles,
+            "socials_sentiment_scores": socials_sentiment_scores,
 
         },
 
@@ -44,7 +55,7 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
 
         },
 
-        "social_analysis":{
+        "socials_analysis":{
 
         },
 
@@ -67,6 +78,7 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
 
 def run_agent_pipeline(
     news_table: pw.Table,
+    socials_table: pw.Table,
     # market_table: pw.Table = None, 
     # fundamentals_table: pw.Table = None, 
     # sentiment_table: pw.Table = None, 
@@ -77,20 +89,35 @@ def run_agent_pipeline(
         return analysis[key]
     
     # Extract ticker and prepare minimal state
-    agents_input = news_table.select(
+    analysed_news = news_table.select(
         symbol=pw.this.symbol,
         news_articles=pw.this.news_articles,
         news_sentiment_scores=pw.this.news_sentiment_scores,
     )
+
+    logger.info(f"[NEWS] Sentiment analysis done")
+
+    analysed_socials = socials_table.select(
+        symbol=pw.this.symbol,
+        socials_articles=pw.this.socials_articles,
+        socials_sentiment_scores=pw.this.socials_sentiment_scores,
+    )
+
+    logger.info(f"[SOCIALS] Sentiment analysis done")
+
+    agents_input = analysed_news.join(analysed_socials, pw.left.symbol == pw.right.symbol)
      # Process through LangGraph
     agents_output = agents_input.select(
         symbol=pw.this.symbol,
         news_sentiment_scores=pw.this.news_sentiment_scores,
+        socials_sentiment_scores=pw.this.socials_sentiment_scores,
         analysis=pw.apply(
             process_ticker,
             pw.this.symbol,
             pw.this.news_articles,
-            pw.this.news_sentiment_scores)
+            pw.this.news_sentiment_scores,
+            pw.this.socials_articles,
+            pw.this.socials_sentiment_scores)
     )
     
     # Process through LangGraph
@@ -113,10 +140,11 @@ def run_main_pipeline():
     print("[MAIN PIPELINE] Starting...", flush=True)
 
     news_table = news_input_pipeline()
-    social_table = social_input_pipeline()
+    socials_table = social_input_pipeline()
 
     run_agent_pipeline(
         news_table=news_table,
+        socials_table=socials_table,
         # market_table=market_table,
         # fundamentals_table=fundamentals_table,
         # sentiment_table=sentiment_table,

@@ -33,7 +33,7 @@ def final_agent(state:AgentState) -> dict:
         
         filings analyst : {state['filings_analysis']}
 
-        social analyst : {state['social_analysis']}
+        social analyst : {state['socials_analysis']}
 
         COMPANY : {state['ticker']}
 

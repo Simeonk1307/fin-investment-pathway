@@ -1,5 +1,6 @@
 import pathway as pw
-
+import logging
+logger = logging.getLogger(__name__)
 class StdDevAccumulator(pw.BaseCustomAccumulator):
     def __init__(self, cnt, sum, sum_sq):
         self.cnt = cnt
@@ -48,7 +49,7 @@ class RangeAccumulator(pw.BaseCustomAccumulator):
 range_calc = pw.reducers.udf_reducer(RangeAccumulator)
 
 # check get_weight_timestamp usage in input_pipeline.py
-class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
+class WeightedSentimentScoreAccumulator(pw.BaseCustomAccumulator):
   
   def __init__(self, negative,neutral_,positive,weight):
     self.negative = negative
@@ -59,7 +60,7 @@ class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
   @classmethod
   def from_row(self, row):
     [(negative,neutral_,positive),weight] = row
-    return SentimentScoreAccumulator(negative, neutral_, positive, weight)
+    return WeightedSentimentScoreAccumulator(negative, neutral_, positive, weight)
 
   def update(self, other):
     self.negative += other.negative*self.weight
@@ -67,6 +68,31 @@ class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
     self.positive += other.positive*self.weight
 
   def compute_result(self) -> tuple[float, float, float]:
+    logger.info("Result computed")
     return (self.negative, self.neutral_, self.positive)
   
-score_accum = pw.reducers.udf_reducer(SentimentScoreAccumulator)
+score_accum = pw.reducers.udf_reducer(WeightedSentimentScoreAccumulator)
+
+class SimpleSentimentScoreAccumulator(pw.BaseCustomAccumulator):
+  
+  def __init__(self, negative,neutral_,positive,cnt):
+    self.negative = negative
+    self.neutral_ = neutral_
+    self.positive = positive
+    self.cnt = cnt
+
+  @classmethod
+  def from_row(self, row):
+    [(negative,neutral_,positive)] = row
+    return SimpleSentimentScoreAccumulator(negative, neutral_, positive, 1)
+
+  def update(self, other):
+    self.negative += other.negative
+    self.neutral_ += other.neutral_
+    self.positive += other.positive
+    self.cnt+=1
+
+  def compute_result(self) -> tuple[float, float, float]:
+    return (self.negative/self.cnt, self.neutral_/self.cnt, self.positive/self.cnt)
+  
+score_accum = pw.reducers.udf_reducer(SimpleSentimentScoreAccumulator)
