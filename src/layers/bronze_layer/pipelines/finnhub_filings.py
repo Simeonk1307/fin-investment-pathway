@@ -16,6 +16,7 @@ from confluent_kafka.admin import AdminClient
 from src.layers.bronze_layer.collectors.finnhub_filings_producer import FinnhubFilingsProducer
 from src.utils.common import common_config, profiles
 
+from src.observability.helping import OTELLoggerManager, OTELMetricsManager
 load_dotenv()
 
 logging.basicConfig(
@@ -23,7 +24,54 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-5s | %(message)s"
 )
 
-logger = logging.getLogger("bronze.filings")
+
+# -------------------- OBSERVABILITY SETUP --------------------
+logger_manager = OTELLoggerManager(
+    service_name="Logger",
+    otlp_endpoint="http://localhost:4317",
+)
+
+metrics_manager = OTELMetricsManager(
+    service_name="bronze_news_pipeline_metrics",
+    otlp_endpoint="http://localhost:4317",
+)
+# logger = logging.getLogger("bronze.news")
+
+ticker_count = metrics_manager.counter(
+    "tickers_processed",
+    "Total processed tickers",
+)
+
+ws_messages = metrics_manager.counter(
+    "ws_messages_received",
+    "Total WebSocket messages received from Finnhub",
+)
+
+kafka_latency = metrics_manager.histogram(
+    "kafka_produce_latency_seconds",
+    "Latency for producing messages to Kafka",
+    unit="s",
+)
+
+restarts = metrics_manager.counter(
+    "finnhub_restarts",
+    "Number of times the Finnhub websocket connection  restart was attempted",
+)
+
+def record_kafka_latency(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        kafka_latency.record(time.time() - start)
+        return result
+    return wrapper
+
+# --------------------------------------------------------------------
+
+
+
+logger = logger_manager.get_logger()
+
 
 
 def section(title):
