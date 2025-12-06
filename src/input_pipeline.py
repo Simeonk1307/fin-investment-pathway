@@ -188,8 +188,43 @@ def news_input_pipeline()->pw.Table:
     return news_table
 
 def social_input_pipeline()->pw.Table:
-    # Placeholder for social media input pipeline
-    pass
+    suffix = f"-{int(time.time())}" if DEBUG else ""
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"finbert-sentiment-socials{suffix}",
+        "auto.offset.reset": "earliest",
+    }
+    
+
+    if SILVER_TOPIC is None:
+        logger.error("[GOLD:NEWS] REDPANDA_SILVER_NEWS_TOPIC environment variable not set.")
+        sys.exit(1)
+
+    logger.info(f"[GOLD:NEWS] Reading from {SILVER_TOPIC}")
+
+    news = pw.io.redpanda.read(
+        rdkafka_settings=consumer,
+        topic=SILVER_TOPIC,
+        schema=FinnHubNewsSchema,
+        format="json",
+        autocommit_duration_ms=1000,
+    )
+
+    enriched = news.select(
+        symbol=pw.this.symbol,
+        merged=merge_texts(pw.this.title, pw.this.content),
+        sentiment=get_sentiment_score(pw.this.title, pw.this.content),
+    )
+
+    news_table = enriched.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        news_articles=pw.reducers.tuple(pw.this.merged),
+        news_sentiment_scores=pw.reducers.tuple(pw.this.sentiment),
+    )
+
+
+    return news_table
+
+
 
 # def input_pipeline() -> list[pw.Table]: 
 #     return [news_input_pipeline(), social_input_pipeline()]
