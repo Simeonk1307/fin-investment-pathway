@@ -3,12 +3,20 @@ import pathway as pw
 from src.agents.agent_pipeline import create_graph
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
+import signal
 import os
 import logging
 
 load_dotenv()
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+def shutdown_handler(signum, frame):
+    print("[Pipeline] Shutdown signal received", flush=True)
+    os._exit(0)
+
+
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
 logger = logging.getLogger(__name__)

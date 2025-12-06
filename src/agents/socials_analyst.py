@@ -53,6 +53,9 @@ def socials_agent(state:AgentState) -> dict:
         
         # if not expected_keys.issubset(result_dict.keys()):
         #     raise ValueError("Missing keys in the response dictionary")
+        # logger.info(f"Socials Analyst Response: {response} , type  {type(response)}")
+        # import time
+        # time.sleep(5)
         return {
             'socials_analysis': result_dict
         }

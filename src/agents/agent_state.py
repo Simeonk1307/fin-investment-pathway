@@ -18,7 +18,7 @@ class AgentState(TypedDict):
 
     #market_analysis: dict  # Market data analysis output
     
-    social_analysis: dict  # Social sentiment analysis output
+    socials_analysis: dict  # Social sentiment analysis output
    
     final_analysis: dict  # Final investment decision
 

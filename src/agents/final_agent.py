@@ -48,12 +48,12 @@ def final_agent(state:AgentState) -> dict:
         response=LLM.with_structured_output(AnalysisReport).invoke(FINAL_PROMPT)
 
         logger.info(f"Final Agent Response: {response} , type  {type(response)}")
-        
+
         # all analysis agents
         logger.info(f"News Analysis: {state['news_analysis']}")
         logger.info(f"Filings Analysis: {state['filings_analysis']}")
         logger.info(f"Market Analysis: {state['market_data']}")
-        logger.info(f"Social Analysis: {state['social_analysis']}")
+        logger.info(f"Social Analysis: {state['socials_analysis']}")
         logger.info(state['ticker'])
        
        
