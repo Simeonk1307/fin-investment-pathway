@@ -1,7 +1,7 @@
 """
 Configuration module for Financial Knowledge Graph System
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 @dataclass
@@ -9,7 +9,7 @@ class Neo4jConfig:
     """Neo4j database configuration"""
     uri: str = "bolt://localhost:7687"
     username: str = "neo4j"
-    password: str = "password"
+    password: str = "neo4j-For-Everyone@123"
     database: str = "neo4j"
 
 @dataclass
@@ -30,8 +30,8 @@ class LLMConfig:
 @dataclass
 class AppConfig:
     """Application configuration"""
-    neo4j: Neo4jConfig = Neo4jConfig()
-    wikidata: WikidataConfig = WikidataConfig()
-    llm: LLMConfig = LLMConfig()
-    country_filter: str = "India"
+    neo4j: Neo4jConfig = field(default_factory=Neo4jConfig)
+    wikidata: WikidataConfig = field(default_factory=WikidataConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    country_filter: str = "United States"
     log_level: str = "INFO"

@@ -5,7 +5,7 @@ import pathway as pw
 from dotenv import load_dotenv
 from src.schemas.silver_schemas import FinnHubNewsSchema
 from src.utils.common import common_config, profiles
-from src.KnowledgeGraph.kg_updater import KGNewsUpdater, Neo4jConfig
+from src.KnowledgeGraph.kg_news_updater import KGNewsUpdater, Neo4jConfig
 
 load_dotenv()
 
@@ -76,7 +76,7 @@ result = news.select(
     )
 )
 
-pw.io.jsonlines.write(result, "kg_news_output.jsonl")
+pw.io.jsonlines.write(result, "kg_socials_output.jsonl")
 
 logger.info("[PIPELINE] Running...")
 

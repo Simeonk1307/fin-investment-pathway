@@ -7,7 +7,7 @@ from neo4j import Driver, Session, Result
 import logging
 from datetime import datetime
 
-from models import QueryResult, RelationType
+from src.KnowledgeGraph.models import QueryResult, RelationType
 
 logger = logging.getLogger(__name__)
 

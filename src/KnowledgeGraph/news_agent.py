@@ -10,8 +10,8 @@ import re
 from datetime import datetime
 from dataclasses import dataclass
 
-from models import Person, Company, Event, EventType, RelationType
-from config import AppConfig
+from src.KnowledgeGraph.models import Person, Company, Event, EventType, RelationType
+from src.KnowledgeGraph.config import AppConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
