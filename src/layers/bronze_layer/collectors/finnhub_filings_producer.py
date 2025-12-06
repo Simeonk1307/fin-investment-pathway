@@ -27,7 +27,7 @@ class FinnhubFilingsProducer(BaseProducer):
         logger,
         topic,
         producer_config,
-        tickers=None, # Made optional so we can fallback to ENV
+        tickers=None,
         api_key=None,
         user_email="admin@example.com",
         poll_interval=600,
@@ -38,11 +38,10 @@ class FinnhubFilingsProducer(BaseProducer):
     ):
         super().__init__(logger, topic, producer_config)
 
-        # 1. Ticker Loading Logic (Args -> Env -> Error)
+        # 1. Ticker Loading Logic
         if tickers:
             self.tickers = tickers
         else:
-            # If no tickers passed, look in .env
             env_str = os.getenv("TICKERS", "")
             self.tickers = [t.strip() for t in env_str.split(",") if t.strip()]
         
@@ -119,7 +118,7 @@ class FinnhubFilingsProducer(BaseProducer):
         return []
 
     def _crawl_and_extract(self, url):
-        """Visits SEC URL, strips HTML tags, returns summary text."""
+        """Visits SEC URL, strips HTML tags, cleans repetition."""
         if not url: return None
         
         try:
@@ -135,12 +134,42 @@ class FinnhubFilingsProducer(BaseProducer):
 
             soup = BeautifulSoup(resp.content, "html.parser")
 
-            # Clean junk
+            # 1. Clean useless tags
             for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "xbrl"]):
                 tag.decompose()
 
-            text = soup.get_text(separator=' ', strip=True)
-            clean_text = re.sub(r'\s+', ' ', text)
+            # 2. Extract text preserving structure (newlines)
+            # This prevents "HeaderContent" merging into "Header Content"
+            text_block = soup.get_text(separator='\n', strip=True)
+            
+            # 3. Deduplicate Lines
+            lines = text_block.split('\n')
+            cleaned_lines = []
+            last_line = ""
+
+            for line in lines:
+                line = line.strip()
+                
+                # Skip empty lines
+                if not line:
+                    continue
+                    
+                # Skip Page Numbers (digits only)
+                if line.isdigit():
+                    continue
+
+                # Skip consecutive duplicates (The main fix)
+                if line == last_line:
+                    continue
+                
+                cleaned_lines.append(line)
+                last_line = line
+
+            # 4. Join back into a single paragraph
+            clean_text = ' '.join(cleaned_lines)
+            
+            # 5. Remove extra whitespace
+            clean_text = re.sub(r'\s+', ' ', clean_text)
 
             return clean_text
 
@@ -165,8 +194,10 @@ class FinnhubFilingsProducer(BaseProducer):
         except:
             ts = int(time.time() * 1000)
 
-        # Crawl for summary, but discard full content
+        # Crawl for summary
         full_text = self._crawl_and_extract(url)
+        
+        # Summary logic
         summary = (full_text[:2000] + "...") if full_text else "No content extracted"
 
         return {
@@ -174,8 +205,8 @@ class FinnhubFilingsProducer(BaseProducer):
             "timestamp": ts,
             "form_type": form,
             "headline": f"{form} Filing for {ticker}",
-            "content": None,          # <--- SAVES SPACE
-            "summary": summary,       # <--- PROVIDES PREVIEW
+            "content": None,          
+            "summary": summary,       
             "url": url,
             "date": date,
             "access_number": acc,
@@ -218,7 +249,7 @@ class FinnhubFilingsProducer(BaseProducer):
                         p = self._parse(e, t)
                         if p:
                             self._publish(p)
-                            time.sleep(0.5) # Rate limit protection
+                            time.sleep(0.5) 
 
                 time.sleep(self.poll_interval)
 
@@ -237,20 +268,18 @@ if __name__ == "__main__":
     
     print("--- STARTING CRAWLER ---")
 
-    # We pass tickers=None so it loads from .env automatically
     try:
         producer = FinnhubFilingsProducer(
             logger=logger,
             topic="test_topic",
             producer_config={},
-            tickers=None, # <--- Auto-load from .env
+            tickers=None, 
             poll_interval=10,
             lookback_days=60, 
             user_email="student_demo@example.com"
         )
 
-        # Mock Send
-        producer.send = lambda env, key: print(f"   -> SENT: {env['data']['headline']} | Summary Len: {len(env['data']['summary'])}") or True
+        producer.send = lambda env, key: print(f"   -> SENT: {env['data']['headline']}\n      PREVIEW: {env['data']['summary'][:150]}...") or True
         producer._running = True
         
         producer._run_loop()
