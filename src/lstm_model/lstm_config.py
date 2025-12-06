@@ -183,40 +183,34 @@ class RealtimeStockPredictor:
     def _compute_indicators(self, df):
         """Compute technical indicators (same as training)"""
         df = df.copy()
-        
-        # Simple Moving Averages
+        df['Return'] = df['Close'].pct_change().fillna(0)
         df['SMA_5'] = df['Close'].rolling(window=5).mean()
+        df['SMA_10'] = df['Close'].rolling(window=10).mean()
         df['SMA_20'] = df['Close'].rolling(window=20).mean()
+        df['SMA_30'] = df['Close'].rolling(window=30).mean()
         df['SMA_50'] = df['Close'].rolling(window=50).mean()
         
-        # RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / (loss + 1e-10)
         df['RSI'] = 100 - (100 / (1 + rs))
         
-        # MACD
         exp1 = df['Close'].ewm(span=12, adjust=False).mean()
         exp2 = df['Close'].ewm(span=26, adjust=False).mean()
         df['MACD'] = exp1 - exp2
         df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
         
-        # Bollinger Bands
         df['BB_Middle'] = df['Close'].rolling(window=20).mean()
         bb_std = df['Close'].rolling(window=20).std()
         df['BB_Upper'] = df['BB_Middle'] + (2 * bb_std)
         df['BB_Lower'] = df['BB_Middle'] - (2 * bb_std)
         
-        # Momentum
         df['Momentum'] = df['Close'].pct_change(periods=5)
-        
-        # Volume Ratio
+        df['Momentum5'] = df['Close'].pct_change(periods=5)
         df['Volume_Ratio'] = df['Volume'] / df['Volume'].rolling(window=20).mean()
         
-        # Fill NaN
         df = df.ffill().bfill()
-        
         return df
     
     def _prefill_buffer_with_history(self):
@@ -285,9 +279,9 @@ class RealtimeStockPredictor:
         if self.feature_columns is None:
             # Default feature order
             feature_names = [
-                'Close', 'Volume', 'SMA_5', 'SMA_20', 'SMA_50',
-                'RSI', 'MACD', 'MACD_Signal', 'BB_Middle',
-                'Momentum', 'Volume_Ratio'
+                'Close', 'Volume', 'Return', 'SMA_5', 'SMA_10', 'SMA_20', 'SMA_30', 'SMA_50',
+                'RSI', 'MACD', 'MACD_Signal', 'BB_Middle', 'BB_Upper', 'BB_Lower',
+                'Momentum', 'Momentum5', 'Volume_Ratio'
             ]
         else:
             feature_names = self.feature_columns

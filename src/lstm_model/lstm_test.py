@@ -34,7 +34,7 @@ import pandas as pd
 import yfinance as yf
 
 # Import our LSTM predictor
-from src.lstm_model.lstm_config import initialize_manager, predict_stock
+from src.lstm_model.lstm_shadow import initialize_manager, predict_stock
 
 try:
     import pathway as pw
@@ -65,31 +65,30 @@ STREAM_DELAY_MS = 100  # Delay between streaming batches (milliseconds)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def compute_technical_indicators(df):
-    """
-    Compute technical indicators for stock data.
-    Same as training script to ensure consistency.
-    """
     df = df.copy()
+    df['Return'] = df['Close'].pct_change().fillna(0)  # NEW
     
     # Simple Moving Averages
     df['SMA_5'] = df['Close'].rolling(window=5).mean()
+    df['SMA_10'] = df['Close'].rolling(window=10).mean()  # NEW
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
+    df['SMA_30'] = df['Close'].rolling(window=30).mean()  # NEW
     df['SMA_50'] = df['Close'].rolling(window=50).mean()
     
-    # RSI (Relative Strength Index)
+    # RSI (existing code)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / (loss + 1e-10)
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # MACD (Moving Average Convergence Divergence)
+    # MACD (existing code)
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
     df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     
-    # Bollinger Bands
+    # Bollinger Bands (existing code)
     df['BB_Middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
     df['BB_Upper'] = df['BB_Middle'] + (2 * bb_std)
@@ -97,8 +96,9 @@ def compute_technical_indicators(df):
     
     # Momentum
     df['Momentum'] = df['Close'].pct_change(periods=5)
+    df['Momentum5'] = df['Close'].pct_change(periods=5)  # NEW (alias)
     
-    # Volume Ratio
+    # Volume Ratio (existing code)
     df['Volume_Ratio'] = df['Volume'] / df['Volume'].rolling(window=20).mean()
     
     # Fill NaN values
@@ -129,12 +129,22 @@ def download_ticker_data(ticker: str, period: str = HISTORICAL_PERIOD) -> pd.Dat
     df['ticker'] = ticker
     
     # Select required columns
+    # required_cols = [
+    #     'Date', 'ticker', 'Close', 'Volume',
+    #     'SMA_5', 'SMA_20', 'SMA_50', 'RSI',
+    #     'MACD', 'MACD_Signal', 'BB_Middle',
+    #     'Momentum', 'Volume_Ratio'
+    # ]
+
     required_cols = [
-        'Date', 'ticker', 'Close', 'Volume',
-        'SMA_5', 'SMA_20', 'SMA_50', 'RSI',
-        'MACD', 'MACD_Signal', 'BB_Middle',
-        'Momentum', 'Volume_Ratio'
-    ]
+    'Date', 'ticker', 'Close', 'Volume',
+    'Return',  # NEW
+    'SMA_5', 'SMA_10', 'SMA_20', 'SMA_30', 'SMA_50',  # ADDED SMA_10, SMA_30
+    'RSI', 'MACD', 'MACD_Signal', 
+    'BB_Middle', 'BB_Upper', 'BB_Lower',  # ADDED BB_Upper, BB_Lower
+    'Momentum', 'Momentum5',  # ADDED Momentum5
+    'Volume_Ratio'
+]
     
     df = df[required_cols].copy()
     df = df.dropna()
@@ -261,15 +271,21 @@ def run_pathway_streaming_pipeline():
         Date: str
         ticker: str
         Close: float
+        Return: float
         Volume: float
         SMA_5: float
+        SMA_10: float
         SMA_20: float
+        SMA_30: float
         SMA_50: float
         RSI: float
         MACD: float
         MACD_Signal: float
         BB_Middle: float
+        BB_Upper: float
+        BB_Lower: float
         Momentum: float
+        Momentum5: float
         Volume_Ratio: float
         time: int
     
@@ -289,14 +305,20 @@ def run_pathway_streaming_pipeline():
         ticker: str,
         close: float,
         volume: float,
+        return_: float,
         sma_5: float,
+        sma_10: float,
         sma_20: float,
+        sma_30: float,
         sma_50: float,
         rsi: float,
         macd: float,
         macd_signal: float,
         bb_middle: float,
+        bb_upper: float,
+        bb_lower: float,
         momentum: float,
+        momentum_5: float,
         volume_ratio: float
     ) -> pw.Json:
         """
@@ -309,14 +331,20 @@ def run_pathway_streaming_pipeline():
         data_point = {
             'Close': close,
             'Volume': volume,
+            'Return': return_,
             'SMA_5': sma_5,
+            'SMA_10': sma_10,
             'SMA_20': sma_20,
+            'SMA_30': sma_30,
             'SMA_50': sma_50,
             'RSI': rsi,
             'MACD': macd,
             'MACD_Signal': macd_signal,
             'BB_Middle': bb_middle,
+            'BB_Upper': bb_upper,
+            'BB_Lower': bb_lower,
             'Momentum': momentum,
+            'Momentum5': momentum_5,
             'Volume_Ratio': volume_ratio
         }
         logger.info(f"Making prediction for {ticker} with data: {data_point}")
@@ -335,14 +363,20 @@ def run_pathway_streaming_pipeline():
             pw.this.ticker,
             pw.this.Close,
             pw.this.Volume,
+            pw.this.Return, 
             pw.this.SMA_5,
+            pw.this.SMA_10,
             pw.this.SMA_20,
+            pw.this.SMA_30,
             pw.this.SMA_50,
             pw.this.RSI,
             pw.this.MACD,
             pw.this.MACD_Signal,
             pw.this.BB_Middle,
+            pw.this.BB_Upper,
+            pw.this.BB_Lower,
             pw.this.Momentum,
+            pw.this.Momentum5,
             pw.this.Volume_Ratio
         )
     )
@@ -423,6 +457,7 @@ def run_demo_without_pathway():
     # Initialize models with buffer pre-fill
     print("\n📦 Initializing LSTM models...")
     initialize_manager(enable_training=True, prefill_buffers=True)
+    input("Press Enter to continue... without Pathway")
     
     # Load streaming data
     streaming_path = f"{DATA_DIR}/stocks_streaming.csv"
@@ -450,14 +485,20 @@ def run_demo_without_pathway():
             data_point = {
                 'Close': row['Close'],
                 'Volume': row['Volume'],
+                'Return' : row['Return'],
                 'SMA_5': row['SMA_5'],
+                'SMA_10':row['SMA_10'],
                 'SMA_20': row['SMA_20'],
+                'SMA_30':row['SMA_30'],
                 'SMA_50': row['SMA_50'],
                 'RSI': row['RSI'],
                 'MACD': row['MACD'],
                 'MACD_Signal': row['MACD_Signal'],
                 'BB_Middle': row['BB_Middle'],
+                'BB_Upper':row['BB_Upper'],
+                'BB_Lower':row['BB_Lower'],
                 'Momentum': row['Momentum'],
+                'Momentum5':row['Momentum5'],
                 'Volume_Ratio': row['Volume_Ratio']
             }
             
@@ -472,6 +513,8 @@ def run_demo_without_pathway():
                       f"${result['predicted_price']:.2f} (Actual: ${result['current_price']:.2f}) "
                       f"RMSE: {result['rmse']:.4f}"
                       f"{' 🔄 RETRAINED' if result.get('retrained') else ''}")
+                    #   f"{}")
+                # input()
     
     # Save predictions
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
