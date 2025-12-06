@@ -19,7 +19,7 @@ def news_agent(state:AgentState) -> dict:
 
     try:
         # news_text =f"Headline: {state['news']['headline']}\nDescription: {state['news']['description']}"
-        news_text=state['news']['news_articles']
+        news_text=state['news_data']['news_articles']
         NEWS_PROMPT = f"""
         ROLE: News Analyst.
         You are a financial analyst specializing in stock market predictions.
@@ -39,8 +39,6 @@ def news_agent(state:AgentState) -> dict:
         """
         # response = LLM.invoke(NEWS_PROMPT)
         response=LLM.with_structured_output(NewsAnalysisResult).invoke(NEWS_PROMPT)
-        logger.info(f"News Analyst Response: {response} , type  {type(response)}")
-
         
         #check whether response.content is dict or str and all keys are there 
         if isinstance(response, NewsAnalysisResult):
@@ -54,15 +52,19 @@ def news_agent(state:AgentState) -> dict:
         if not expected_keys.issubset(result_dict.keys()):
             raise ValueError("Missing keys in the response dictionary")
         
-        state['news']['news_analysis'] = result_dict
-        return state
+       
+        return {
+            'news_analysis': result_dict
+        }
     
     except Exception as e:
         logger.error(f"Error processing news analyst response: {e}")
-        return {"news_summary": {
+
+        return {'news_analysis': {
             "prediction": "NEUTRAL",
             "sentiment_score": 0.0,
             "confidence": "LOW",
             "reason": "Unable to analyze the news due to processing error."
-        }}
+        }
+        }
 

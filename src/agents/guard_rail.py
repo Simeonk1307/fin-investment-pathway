@@ -24,7 +24,8 @@ def safety_guardrail_node(state: AgentState) -> AgentState:
     if "UNSAFE" in result.content:
         final_analysis["prediction"] = "NEUTRAL"
         final_analysis["confidence"] = "LOW"
-        final_analysis["reason"] = "Analysis flagged by safety review."
-        state["final_analysis"] = final_analysis
+        final_analysis["reason"] = f"Analysis flagged by safety review. - output {final_analysis['reason']}"
     
-    return state
+    return {
+        'final_analysis': final_analysis
+    }

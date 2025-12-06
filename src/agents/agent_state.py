@@ -7,12 +7,21 @@ class AgentState(TypedDict):
     # Input data
     ticker: str
     market_data: dict
-    news: dict
+    news_data: dict
+    filings_data:dict
+    social_data:dict
 
     
     # Agent outputs
     news_analysis: dict  # NEW: Structured news output
+    filings_analysis: dict  # Filings analysis output
+
+    #market_analysis: dict  # Market data analysis output
+    
+    social_analysis: dict  # Social sentiment analysis output
+   
     final_analysis: dict  # Final investment decision
+
 
     bull_arguments: Sequence[str]
     bear_arguments: Sequence[str]

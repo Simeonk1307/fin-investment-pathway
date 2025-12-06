@@ -26,7 +26,11 @@ def final_agent(state:AgentState) -> dict:
         FOCUS: Synthesize information to deliver a clear and concise recommendation.
 
         INPUT: Previous analyses: 
-        news analyst : {state['news']['news_analysis']}
+        news analyst : {state['news_analysis']}
+        filings analyst : {state['filings_analysis']}
+        social analyst : {state['social_analysis']}
+        COMPANY : {state['ticker']}
+        market data : {state['market_data']}
 
         Based on the above analyses, provide:
         1. Final prediction: Will the stock price go UP, DOWN, or stay NEUTRAL?
@@ -36,7 +40,12 @@ def final_agent(state:AgentState) -> dict:
         """
         response=LLM.with_structured_output(AnalysisReport).invoke(FINAL_PROMPT)
         logger.info(f"Final Agent Response: {response} , type  {type(response)}")
-
+        # all analysis agents
+        logger.info(f"News Analysis: {state['news_analysis']}")
+        logger.info(f"Filings Analysis: {state['filings_analysis']}")
+        logger.info(f"Market Analysis: {state['market_data']}")
+        logger.info(f"Social Analysis: {state['social_analysis']}")
+        logger.info(state['ticker'])
         if isinstance(response, AnalysisReport):
             result_dict = response.model_dump()
         else:
@@ -46,11 +55,16 @@ def final_agent(state:AgentState) -> dict:
 
         if not expected_keys.issubset(result_dict.keys()):
             raise ValueError("Missing keys in the response dictionary")
-        
-        state['final_analysis'] = result_dict
-        
-        return state
+        return {
+            'final_analysis': result_dict
+        }
     
     except Exception as e:
         logger.error(f"Error processing final agent response: {e}")
-        return state
+        return {
+            "final_analysis": {
+                "prediction": "NEUTRAL",
+                "confidence": "LOW",
+                "reason": "Unable to provide final analysis due to processing error."
+        }
+        }
