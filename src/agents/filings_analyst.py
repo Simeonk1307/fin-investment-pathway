@@ -30,7 +30,7 @@ def filings_agent(state:AgentState) -> dict:
 
         """
         response=LLM.with_structured_output(FilingsAnalysisResult).invoke(FILINGS_PROMPT)
-        logger.info(f"Filings Analyst Response: {response} , type  {type(response)}")
+        # logger.info(f"Filings Analyst Response: {response} , type  {type(response)}")
 
         if isinstance(response, FilingsAnalysisResult):
             result_dict = response.model_dump()

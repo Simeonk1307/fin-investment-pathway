@@ -46,3 +46,27 @@ class RangeAccumulator(pw.BaseCustomAccumulator):
         return self.maxi - self.mini
     
 range_calc = pw.reducers.udf_reducer(RangeAccumulator)
+
+# check get_weight_timestamp usage in input_pipeline.py
+class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
+  
+  def __init__(self, negative,neutral_,positive,weight):
+    self.negative = negative
+    self.neutral_ = neutral_
+    self.positive = positive
+    self.weight = weight
+
+  @classmethod
+  def from_row(self, row):
+    [(negative,neutral_,positive),weight] = row
+    return SentimentScoreAccumulator(negative, neutral_, positive, weight)
+
+  def update(self, other):
+    self.negative += other.negative*self.weight
+    self.neutral_ += other.neutral_*self.weight
+    self.positive += other.positive*self.weight
+
+  def compute_result(self) -> tuple[float, float, float]:
+    return (self.negative, self.neutral_, self.positive)
+  
+score_accum = pw.reducers.udf_reducer(SentimentScoreAccumulator)

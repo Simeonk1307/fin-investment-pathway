@@ -30,7 +30,7 @@ def social_agent(state:AgentState) -> dict:
 
         """
         response=LLM.with_structured_output(SocialAnalysisResult).invoke(SOCIAL_PROMPT)
-        logger.info(f"Social Analyst Response: {response} , type  {type(response)}")
+        # logger.info(f"Social Analyst Response: {response} , type  {type(response)}")
 
         if isinstance(response, SocialAnalysisResult):
             result_dict = response.model_dump()

@@ -29,7 +29,8 @@ class FinBertSentimentAnalyzer:
             logits = outputs.logits
             probabilities = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
 
-        sentiment_labels = ["negative", "neutral", "positive"]
+        # sentiment_labels = ["negative", "neutral", "positive"]
+        sentiment_labels = list(self.model.config.id2label.values())
         predicted_index = probabilities.argmax()
         sentiment_label = sentiment_labels[predicted_index]
         sentiment_score = probabilities[predicted_index] * (1 if sentiment_label == "positive" else -1 if sentiment_label == "negative" else 0)

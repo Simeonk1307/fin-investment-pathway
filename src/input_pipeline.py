@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from src.schemas.silver_schemas import FinnHubNewsSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
+from src.utils.reducers import SentimentScoreAccumulator
 def debug_statement(*args):
     import time
     logger.info(f"[DEBUG " + " ".join(str(a) for a in args))
@@ -122,6 +123,31 @@ def merge_texts(title: str, content: str) -> str:
 def get_sentiment_score(title: str, content: str) -> list[float]:
     return _get_sentiment_score(title, content)
 
+@pw.udf
+def get_weight_timestamp(timestamp: int) -> float:
+    """
+    Calculate weight for stock news with appropriate decay.
+    For stocks, use 10-day half-life (news from 10 days ago = 50% weight)
+    Args:
+        timestamp: Unix timestamp (e.g., 1734453535)
+    Returns:
+        Weight between 0.0001 and 1.0
+    """
+    
+    current_time = time.time()
+    age_seconds = current_time - timestamp
+    age_days = age_seconds / 86400  # Convert seconds to days
+    # logger.info(f"Calculating weight for timestamp {timestamp}, age in days: {age_days}")
+    # Day 0 (today): weight = 1.0
+    # Day 10: weight = 0.5
+    # Day 30: weight = 0.125
+
+    half_life_days = 10.0
+    weight = 2 ** (-age_days / half_life_days)
+    # logger.info(f"Calculated weight: {weight} for age in days: {age_days}")
+    # time.sleep(3)
+    
+    return max(weight, 0.0001)  # Minimum weight
 
 def news_input_pipeline()->pw.Table:
     suffix = f"-{int(time.time())}" if DEBUG else ""
@@ -145,15 +171,17 @@ def news_input_pipeline()->pw.Table:
         autocommit_duration_ms=1000,
     )
     enriched = news.select(
+        timestamp=pw.this.timestamp,
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
         sentiment=get_sentiment_score(pw.this.title, pw.this.content),
+        weight=get_weight_timestamp(pw.this.timestamp)
     )
 
     news_table = enriched.groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
         news_articles=pw.reducers.tuple(pw.this.merged),
-        news_sentiment_scores=pw.reducers.tuple(pw.this.sentiment),
+        news_sentiment_scores=pw.reducers.udf_reducer(SentimentScoreAccumulator)(pw.this.sentiment, pw.this.weight)
     )
 
 

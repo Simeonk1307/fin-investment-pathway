@@ -10,7 +10,7 @@ class AnalysisReport(BaseModel):
     prediction: str = Field(..., description="Stock price movement prediction: UP, DOWN, or NEUTRAL")
     confidence: str = Field(..., description="Confidence level: HIGH, MEDIUM, or LOW")
     reason: str = Field(..., description="Brief reason for the prediction in one line. It should be clear and specific")
-
+    strategy: str = Field(..., description="Action strategy: BUY, SELL or HOLD")
 
 def final_agent(state:AgentState) -> dict:
     """
@@ -27,9 +27,16 @@ def final_agent(state:AgentState) -> dict:
 
         INPUT: Previous analyses: 
         news analyst : {state['news_analysis']}
+
+        news_sentimental_scores :[ {state['news_data'].get('news_sentiment_scores',{})} in the format of (negative, neutral, positive)
+        Time-weighted probability scores from FinBERT analysis, with recent articles weighted more heavily. ]
+        
         filings analyst : {state['filings_analysis']}
+
         social analyst : {state['social_analysis']}
+
         COMPANY : {state['ticker']}
+
         market data : {state['market_data']}
 
         Based on the above analyses, provide:
@@ -39,19 +46,23 @@ def final_agent(state:AgentState) -> dict:
 
         """
         response=LLM.with_structured_output(AnalysisReport).invoke(FINAL_PROMPT)
+
         logger.info(f"Final Agent Response: {response} , type  {type(response)}")
+        
         # all analysis agents
         logger.info(f"News Analysis: {state['news_analysis']}")
         logger.info(f"Filings Analysis: {state['filings_analysis']}")
         logger.info(f"Market Analysis: {state['market_data']}")
         logger.info(f"Social Analysis: {state['social_analysis']}")
         logger.info(state['ticker'])
+       
+       
         if isinstance(response, AnalysisReport):
             result_dict = response.model_dump()
         else:
             raise ValueError("Response content is neither dict nor str")
         
-        expected_keys = {"prediction", "confidence", "reason"}
+        expected_keys = {"prediction", "confidence", "reason", "strategy"}
 
         if not expected_keys.issubset(result_dict.keys()):
             raise ValueError("Missing keys in the response dictionary")
@@ -65,6 +76,7 @@ def final_agent(state:AgentState) -> dict:
             "final_analysis": {
                 "prediction": "NEUTRAL",
                 "confidence": "LOW",
-                "reason": "Unable to provide final analysis due to processing error."
+                "reason": "Unable to provide final analysis due to processing error.",
+                "strategy": "Unable to determine strategy - Best to HOLD or SELL. "
         }
         }

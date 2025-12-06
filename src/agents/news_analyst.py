@@ -52,6 +52,7 @@ def news_agent(state:AgentState) -> dict:
         if not expected_keys.issubset(result_dict.keys()):
             raise ValueError("Missing keys in the response dictionary")
         
+        # logger.info(f"News Analyst Response: {response} , type  {type(response)}")
        
         return {
             'news_analysis': result_dict

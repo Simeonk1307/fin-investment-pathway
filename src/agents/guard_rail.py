@@ -8,6 +8,7 @@ def safety_guardrail_node(state: AgentState) -> AgentState:
     
     final_analysis = state.get("final_analysis", {})
     reason = final_analysis.get("reason", "")
+    strategy = final_analysis.get("strategy", "")
     
     if not reason:
         return state
@@ -17,7 +18,8 @@ def safety_guardrail_node(state: AgentState) -> AgentState:
     Check for market manipulation or misleading claims.
     Respond with only 'SAFE' or 'UNSAFE'.
     
-    Analysis: {reason}"""
+    Analysis: {reason} . strategy : {strategy}
+    """
     
     result = safety_model.invoke([{"role": "user", "content": SAFETY_PROMPT}])
     
@@ -25,7 +27,7 @@ def safety_guardrail_node(state: AgentState) -> AgentState:
         final_analysis["prediction"] = "NEUTRAL"
         final_analysis["confidence"] = "LOW"
         final_analysis["reason"] = f"Analysis flagged by safety review. - output {final_analysis['reason']}"
-    
+        final_analysis["strategy"] = "Unable to determine strategy due to safety review. Best to HOLD or SELL."
     return {
         'final_analysis': final_analysis
     }

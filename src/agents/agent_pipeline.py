@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from src.agents.news_analyst import news_agent
 from src.agents.final_agent import final_agent
 from src.agents.llm_factory import get_llm
-from src.agents.agent_state import AgentState
+from src.agents.agent_state import AgentState, data_ingestion_node
 from src.agents.guard_rail import safety_guardrail_node
 from src.agents.filings_analyst import filings_agent
 from src.agents.social_analyst import social_agent
@@ -24,71 +24,7 @@ def signal_handler(sig, frame):
     print('You pressed Ctrl+C! Exiting gracefully...')
     sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
-#even in pathway run, we can catch ctrl+c
-# ============================================================================
-
-# class TrialFinnHubNewsSchema(pw.Schema):
-#     id: int
-#     # news_id: int  # The 137618953 field
-#     headline: str
-#     description: str
-#     url: str
-#     source: str
-#     published_at: str
-#     category: str
-#     company: str
-
-# class FinnHubNewsSchema(pw.Schema):
-#     news_id: int
-#     symbol: str
-#     timestamp: int
-#     source: str
-#     category: str
-#     title: str
-#     content: str
-#     url: str
-#     image_url: str
-        
-# finnhub_news_mapping = {
-#     "news_id": "id",
-#     "symbol": "related",
-#     "timestamp": "datetime",
-#     "title": "headline",
-#     "content": "summary",
-#     "image_url": "image",
-# }
-
-
-# ============================================================================
-# AGENT NODES
-# ============================================================================
-def data_ingestion_node(state: AgentState) -> AgentState:
-    """
-    Fetch latest data from Silver layer topics
-    
-    TODO: In future, this will receive multiple Pathway tables:
-        - news_table (current)
-        - market_data_table
-        - fundamentals_table
-        - social_sentiment_table
-        - filings_table
-    
-    For now, only processes news (headline + summary already in state)
-    """
-    
-    # News data already in state (headline, summary)
-    # Future: Add market data, fundamentals, etc.
-    # state["messages"] = [HumanMessage(content=f"Analyzing {state['ticker']}")]
-    # state["debate_rounds"] = 0
-    # state["news"]={
-    #     "ticker": state.get("ticker",""),
-    #     "headline": state.get("headline",""),
-    #     "description": state.get("description",""),
-    # }
-    
-    "Need to verify all inputs and outputs are present (keys) in state"
-    return None
-
+finbert_analyzer = FinBertSentimentAnalyzer()
 
 # ============================================================================
 # LANGGRAPH WORKFLOW
@@ -125,7 +61,7 @@ def create_graph() -> StateGraph:
     return workflow.compile()
 
 
-def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: tuple[float]):
+def trial_process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: tuple[float]):
 
     graph = create_graph()
     state = {
@@ -178,7 +114,7 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
         "reason": "Unable to analyze the news due to processing error in process_news_row."
     })
 
-def run_agent_pipeline(
+def trial_pipeline(
     news_table: pw.Table,
     # market_table: pw.Table = None, 
     # fundamentals_table: pw.Table = None, 
@@ -188,7 +124,6 @@ def run_agent_pipeline(
     @pw.udf
     def get_element(analysis:dict, key:str):
         return analysis[key]
-    
     @pw.udf
     def merge(headline, description)->str:
         return f"Headline: {headline}\nDescription: {description}"
@@ -199,29 +134,26 @@ def run_agent_pipeline(
         text = f"Headline: {headline}\nDescription: {description}"
         return finbert_analyzer.analyze_sentiment(text)
 
-    graph = create_graph()
-    finbert_analyzer = FinBertSentimentAnalyzer()
+    #if running in test mode
+    news_analysis_table = news_table.groupby(pw.this.company).reduce(
+        symbol=pw.this.company,
+        articles=pw.reducers.tuple(merge(pw.this.headline, pw.this.description)),
+        sentimental_scores=pw.reducers.tuple(get_sentiment(pw.this.headline, pw.this.description)),
 
-    # #if running in test mode
-    # news_analysis_table = news_table.groupby(pw.this.company).reduce(
-    #     symbol=pw.this.company,
-    #     articles=pw.reducers.tuple(merge(pw.this.headline, pw.this.description)),
-    #     sentimental_scores=pw.reducers.tuple(get_sentiment(pw.this.headline, pw.this.description)),
-
-    # )
+    )
     
     # Extract ticker and prepare minimal state
-    agents_input = news_table.select(
+    agents_input = news_analysis_table.select(
         symbol=pw.this.symbol,
-        news_articles=pw.this.news_articles,
-        news_sentiment_scores=pw.this.news_sentiment_scores,
+        news_articles=pw.this.articles,
+        news_sentiment_scores=pw.this.sentimental_scores,
     )
 
     agents_output = agents_input.select(
         symbol=pw.this.symbol,
         news_sentiment_scores=pw.this.news_sentiment_scores,
         analysis=pw.apply(
-            process_ticker,
+            trial_process_ticker,
             pw.this.symbol,
             pw.this.news_articles,
             pw.this.news_sentiment_scores)
@@ -234,6 +166,7 @@ def run_agent_pipeline(
         prediction=get_element(pw.this.analysis, "prediction"),
         confidence=get_element(pw.this.analysis, "confidence"),
         reason=get_element(pw.this.analysis, "reason"),
+        strategy=get_element(pw.this.analysis, "strategy"),
     )
     os.makedirs(output_path, exist_ok=True)
     pw.io.csv.write(results, f"{output_path}agent_pipeline_news_analysis.csv")
@@ -249,7 +182,7 @@ if __name__ == "__main__":
     
     csv_path = "outputs/finnhub_news.csv"
     mode = "static"
-    output_path = "outputs/"
+    output_path = "debug_outputs/trial_pipeline/"
     class TrialFinnHubNewsSchema(pw.Schema):
         id: int
         # news_id: int  # The 137618953 field
@@ -269,7 +202,7 @@ if __name__ == "__main__":
         autocommit_duration_ms=1000
     )
 
-    results = run_agent_pipeline(
+    results = trial_pipeline(
         news_table=news_table,
         output_path=output_path
     )

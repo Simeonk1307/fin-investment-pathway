@@ -30,3 +30,15 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     next_agent: str
 
+def data_ingestion_node(state: AgentState) -> AgentState:
+    """
+    Fetch data from Silver layer topics
+    """
+    if ('news_articles' not in state['news_data']) :
+        raise KeyError("Missing news_articles in state")
+    
+    if ('news_sentiment_scores' not in state['news_data']):
+        raise KeyError("Missing news sentiment scores in state")
+    
+
+    return None

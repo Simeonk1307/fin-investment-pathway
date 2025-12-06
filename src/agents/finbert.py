@@ -29,14 +29,20 @@ class FinBertSentimentAnalyzer:
             logits = outputs.logits
             probabilities = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
 
-        sentiment_labels = ["negative", "neutral", "positive"]
+        sentiment_labels = list(self.model.config.id2label.values())
+        # logger.info(sentiment_labels)
+        # import time
+        # time.sleep(5)
+        #probability_labels = ["negative", "neutral", "positive"] - change according to sentiment model config
+        order_probabilties= {label: prob for label, prob in zip(sentiment_labels, probabilities)}
         predicted_index = probabilities.argmax()
         sentiment_label = sentiment_labels[predicted_index]
         sentiment_score = probabilities[predicted_index] * (1 if sentiment_label == "positive" else -1 if sentiment_label == "negative" else 0)
-
         # return sentiment_label, float(sentiment_score)
         # return  float(sentiment_score)
-        return tuple(probabilities)
+        return_order = ["negative", "neutral", "positive"]
+        return_probabilties = [order_probabilties[label] for label in return_order]
+        return tuple(return_probabilties)
     
     def analyze_batch(self, texts: list[str]) -> list[tuple[str, float]]:
         results = []
