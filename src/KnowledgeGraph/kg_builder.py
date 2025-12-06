@@ -775,7 +775,7 @@ class WikidataKGBuilder:
 
 def main() -> None:
     config = AppConfig()
-    builder = WikidataKGBuilder(config, country_name="India")
+    builder = WikidataKGBuilder(config, country_name="United States")
     try:
         stats = builder.build_knowledge_graph()
         print("\n=== KNOWLEDGE GRAPH BUILD COMPLETE ===")
