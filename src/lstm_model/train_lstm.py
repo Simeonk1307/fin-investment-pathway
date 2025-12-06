@@ -119,7 +119,7 @@ def compute_technical_indicators(df):
 
 def download_stock_data(ticker, period=TRAIN_YEARS):
     """Download and prepare stock data with technical indicators"""
-    print(f"  📥 Downloading {ticker} data...")
+    print(f"Downloading {ticker} data...")
     
     df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
     
@@ -139,7 +139,7 @@ def download_stock_data(ticker, period=TRAIN_YEARS):
     df = df[FEATURE_COLUMNS].copy()
     df = df.dropna()
     
-    print(f"  ✅ Downloaded {len(df)} data points")
+    print(f"Downloaded {len(df)} data points")
     
     return df
 
@@ -246,7 +246,7 @@ def train_model(ticker):
     """Train LSTM model for a single ticker"""
     
     print(f"\n{'='*70}")
-    print(f"🎯 Training: {ticker}")
+    print(f"Training: {ticker}")
     print(f"{'='*70}")
     
     # Download data
@@ -267,8 +267,8 @@ def train_model(ticker):
     X_train, y_train = create_sequences(train_scaled, LOOKBACK_PERIOD)
     X_test, y_test = create_sequences(test_scaled, LOOKBACK_PERIOD)
     
-    print(f"  📊 Train samples: {len(X_train)}")
-    print(f"  📊 Test samples: {len(X_test)}")
+    print(f"Train samples: {len(X_train)}")
+    print(f"Test samples: {len(X_test)}")
     
     # Create dataloaders
     train_dataset = StockDataset(X_train, y_train)
@@ -292,7 +292,7 @@ def train_model(ticker):
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     
     # Training loop
-    print(f"  🔥 Training on {device}...")
+    print(f"Training on {device}...")
     best_loss = float('inf')
     patience_counter = 0
     losses=[]
@@ -331,18 +331,18 @@ def train_model(ticker):
             print(f"  Epoch {epoch+1}/{EPOCHS} - Train: {train_loss:.6f}, Test: {test_loss:.6f}")
         
         if patience_counter >= PATIENCE:
-            print(f"  ⏸️  Early stopping at epoch {epoch+1}")
+            print(f"Early stopping at epoch {epoch+1}")
             break
     
     # Save scaler separately
     joblib.dump(scaler, f"{MODEL_DIR}/{ticker}_scaler.pkl")
     
     mean_loss=np.mean([x[1] for x in losses])
-    print(f"  📈 Training complete for {ticker}!")
+    print(f"  Training complete for {ticker}!")
     print(f"  ✅ Model saved: {MODEL_DIR}/{ticker}_lstm.pt")
     print(f"  ✅ Scaler saved: {MODEL_DIR}/{ticker}_scaler.pkl")
     print(f"  ✅ Best test loss: {best_loss:.6f}")
-    print(f"  ℹ️  Mean test loss: {mean_loss:.6f}")
+    print(f"   Mean test loss: {mean_loss:.6f}")
     
     return {
         'ticker': ticker,
@@ -361,7 +361,7 @@ def main():
     """Main training pipeline"""
     
     print("\n" + "="*70)
-    print("🚀 LSTM STOCK PREDICTION - TRAINING PIPELINE")
+    print("LSTM STOCK PREDICTION - TRAINING PIPELINE")
     print("="*70)
     print(f"\n📋 Configuration:")
     print(f"  Tickers: {TICKERS}")
@@ -385,7 +385,7 @@ def main():
             result = train_model(ticker)
             results.append(result)
         except Exception as e:
-            print(f"\n  ❌ Error training {ticker}: {e}")
+            print(f"\n Error training {ticker}: {e}")
             failed.append(ticker)
     
     # Save summary
@@ -411,17 +411,17 @@ def main():
         json.dump(summary, f, indent=2)
     
     print("\n" + "="*70)
-    print("✅ TRAINING COMPLETE!")
+    print("TRAINING COMPLETE!")
     print("="*70)
-    print(f"\n📁 Models: {MODEL_DIR}/")
-    print(f"📁 Summary: {RESULTS_DIR}/training_summary.json")
-    print(f"✅ Trained: {len(results)} models")
+    print(f"\nModels: {MODEL_DIR}/")
+    print(f"Summary: {RESULTS_DIR}/training_summary.json")
+    print(f"Trained: {len(results)} models")
     if failed:
-        print(f"❌ Failed: {len(failed)} models - {', '.join(failed)}")
+        print(f" Failed: {len(failed)} models - {', '.join(failed)}")
     
-    print("\n🎯 Next Steps:")
-    print("  → Run: python test_lstm_stocks.py")
-    print("  → Models will auto-load for real-time prediction")
+    # print("\nNext Steps:")
+    # print("  → Run: python test_lstm_stocks.py")
+    # print("  → Models will auto-load for real-time prediction")
 
 
 if __name__ == "__main__":

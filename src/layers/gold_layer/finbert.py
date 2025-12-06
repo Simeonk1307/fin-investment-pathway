@@ -18,7 +18,7 @@ class FinBertSentimentAnalyzer:
     def analyze_sentiment(self, text: str) -> tuple[float, float, float]:
 
         logger = logging.getLogger(__name__)
-        logger.info(f"Analyzing sentiment for text{text} of length {len(text)}")
+        # logger.info(f"Analyzing sentiment for text{text} of length {len(text)}")
     # def analyze_sentiment(self, text: str) -> float:
     # def analyze_sentiment(self, text: str) -> tuple[str, float]:
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True)
@@ -36,6 +36,7 @@ class FinBertSentimentAnalyzer:
 
         # return sentiment_label, float(sentiment_score)
         # return  float(sentiment_score)
+        probabilities = [float(prob) for prob in probabilities]
         return tuple(probabilities)
     
     def analyze_batch(self, texts: list[str]) -> list[tuple[str, float]]:
@@ -46,8 +47,6 @@ class FinBertSentimentAnalyzer:
         return results
     
 
-
-@pw.udf
 def get_sentiment(title:str="", content:str = "")->tuple[float, float, float]:
 
     finbert_analyzer = FinBertSentimentAnalyzer()

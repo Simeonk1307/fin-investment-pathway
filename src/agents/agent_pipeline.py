@@ -1,4 +1,5 @@
 from asyncio.log import logger
+import os
 import pathway as pw
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -177,7 +178,7 @@ def process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_scores: 
         "reason": "Unable to analyze the news due to processing error in process_news_row."
     })
 
-def run_pipeline(
+def run_agent_pipeline(
     news_table: pw.Table,
     # market_table: pw.Table = None, 
     # fundamentals_table: pw.Table = None, 
@@ -210,17 +211,12 @@ def run_pipeline(
     # )
     
     # Extract ticker and prepare minimal state
-    news_analysis_table = news_table.groupby(pw.this.symbol).reduce(
+    agents_input = news_table.select(
         symbol=pw.this.symbol,
-        articles = pw.reducers.tuple(merge(pw.this.title, pw.this.content)),
-        sentimental_scores = pw.reducers.tuple(get_sentiment(pw.this.title, pw.this.content)),
+        news_articles=pw.this.news_articles,
+        news_sentiment_scores=pw.this.news_sentiment_scores,
     )
 
-    agents_input = news_analysis_table.select(
-        symbol=pw.this.symbol,
-        news_articles=pw.this.articles,
-        news_sentiment_scores=pw.this.sentimental_scores,
-    )
     agents_output = agents_input.select(
         symbol=pw.this.symbol,
         news_sentiment_scores=pw.this.news_sentiment_scores,
@@ -239,6 +235,9 @@ def run_pipeline(
         confidence=get_element(pw.this.analysis, "confidence"),
         reason=get_element(pw.this.analysis, "reason"),
     )
+    os.makedirs(output_path, exist_ok=True)
+    pw.io.csv.write(results, f"{output_path}agent_pipeline_news_analysis.csv")
+    pw.io.jsonlines.write(results, f"{output_path}agent_pipeline_news_analysis.jsonl")
 
     return results
 
@@ -270,12 +269,13 @@ if __name__ == "__main__":
         autocommit_duration_ms=1000
     )
 
-    results = run_pipeline(
+    results = run_agent_pipeline(
         news_table=news_table,
         output_path=output_path
     )
     
     # Output to files
+    os.makedirs(output_path, exist_ok=True)
     pw.io.csv.write(results, f"{output_path}news_analysis.csv")
     # pw.io.jsonlines.write(results, f"{output_path}news_analysis.jsonl")
     
