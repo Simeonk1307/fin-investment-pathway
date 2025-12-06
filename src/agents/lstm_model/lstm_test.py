@@ -34,7 +34,7 @@ import pandas as pd
 import yfinance as yf
 
 # Import our LSTM predictor
-from src.lstm_model.lstm_shadow import initialize_manager, predict_stock
+from src.agents.lstm_model.lstm_shadow import initialize_manager, predict_stock
 
 try:
     import pathway as pw
