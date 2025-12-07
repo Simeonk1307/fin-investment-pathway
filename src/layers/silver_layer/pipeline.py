@@ -18,7 +18,58 @@ logging.basicConfig(
     stream=sys.stdout,
     force=True,
 )
-logger = logging.getLogger(__name__)
+
+
+import time
+from src.observability.helping import OTELLoggerManager, OTELMetricsManager
+
+# -------------------- OBSERVABILITY SETUP --------------------
+logger_manager = OTELLoggerManager(
+    service_name="Silver_pipeline_creation_logger",
+    otlp_endpoint="http://localhost:4317",
+)
+
+metrics_manager = OTELMetricsManager(
+    service_name="Silver_pipeline",
+    otlp_endpoint="http://localhost:4317",
+)
+# logger = logging.getLogger("bronze.news")
+
+ticker_count = metrics_manager.counter(
+    "tickers_processed",
+    "Total processed tickers",
+)
+
+ws_messages = metrics_manager.counter(
+    "ws_messages_received",
+    "Total WebSocket messages received from Finnhub",
+)
+
+kafka_latency = metrics_manager.histogram(
+    "kafka_produce_latency_seconds",
+    "Latency for producing messages to Kafka",
+    unit="s",
+)
+
+restarts = metrics_manager.counter(
+    "finnhub_restarts",
+    "Number of times the Finnhub websocket connection  restart was attempted",
+)
+
+def record_kafka_latency(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        kafka_latency.record(time.time() - start)
+        return result
+    return wrapper
+
+# --------------------------------------------------------------------
+
+
+logger = logger_manager.get_logger()
+
+# logger = logging.getLogger(__name__)
 
 logging.getLogger("librdkafka").setLevel(logging.CRITICAL)
 logging.getLogger("confluent_kafka").setLevel(logging.CRITICAL)
@@ -132,6 +183,7 @@ def main():
         print(f"[SILVER] License error: {e}", file=sys.stderr, flush=True)
         sys.exit(1)
     
+    pw.set_monitoring_config(server_endpoint="http://localhost:4317")
     print("[SILVER] Starting Pathway runtime...", flush=True)
     
     while True:
