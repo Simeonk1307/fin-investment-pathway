@@ -57,8 +57,9 @@ class FinnhubFilingsSchema(pw.Schema):
     headline: str
     url: str
     date: str
+    source: str
+    source_type: str
 
 finnhub_filings_mapping = {
     
 }
-

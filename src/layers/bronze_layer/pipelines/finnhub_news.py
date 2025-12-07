@@ -30,7 +30,7 @@ logging.basicConfig(
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(
-    service_name="Logger",
+    service_name="bronze_news_pipeline_logs",
     otlp_endpoint="http://localhost:4317",
 )
 

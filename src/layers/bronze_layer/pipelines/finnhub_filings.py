@@ -15,24 +15,18 @@ from confluent_kafka.admin import AdminClient
 
 from src.layers.bronze_layer.collectors.finnhub_filings_producer import FinnhubFilingsProducer
 from src.utils.common import common_config, profiles
-
 from src.observability.helping import OTELLoggerManager, OTELMetricsManager
+
 load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-5s | %(message)s"
-)
-
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(
-    service_name="Logger",
+    service_name="bronze_filings_pipeline_logs",
     otlp_endpoint="http://localhost:4317",
 )
 
 metrics_manager = OTELMetricsManager(
-    service_name="bronze_news_pipeline_metrics",
+    service_name="bronze_filings_pipeline_metrics",
     otlp_endpoint="http://localhost:4317",
 )
 # logger = logging.getLogger("bronze.news")
@@ -69,9 +63,12 @@ def record_kafka_latency(func):
 # --------------------------------------------------------------------
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-5s | %(message)s"
+)
 
 logger = logger_manager.get_logger()
-
 
 
 def section(title):
@@ -243,7 +240,7 @@ def main():
             topic=topic,
             api_key=api_key,
             producer_config=producer_config,
-            poll_interval=600,
+            poll_interval=60,
             lookback_days=90,
             max_retries=5,
         )

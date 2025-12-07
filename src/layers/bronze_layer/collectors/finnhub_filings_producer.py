@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from src.layers.bronze_layer.base.base_producer import BaseProducer
 from src.layers.bronze_layer.event_envelope import create_event_envelope
+from src.utils.minio_storage import MinioStorage
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +51,13 @@ class FinnhubFilingsProducer(BaseProducer):
             logger.critical("No tickers found in args or .env")
             raise ValueError("No tickers provided! Add 'TICKERS=AAPL,MSFT' to your .env file.")
 
+        try:
+            self.storage = MinioStorage()
+        except Exception as e:
+            logger.critical("Minio Storage initialisation failed")
+            raise Exception("Minio Storage initialisation failed")
+
+
         self.poll_interval = poll_interval
         self.lookback_days = lookback_days
         self.max_retries = max_retries
@@ -68,7 +76,6 @@ class FinnhubFilingsProducer(BaseProducer):
         self.client = finnhub.Client(api_key=self.api_key)
         self.seen = set()
 
-        # SEC Scraper Setup
         self.sec_headers = {
             "User-Agent": f"FinnhubFilingBot/1.0 ({user_email})",
             "Accept-Encoding": "gzip, deflate",
@@ -165,22 +172,29 @@ class FinnhubFilingsProducer(BaseProducer):
         except:
             ts = int(time.time() * 1000)
 
-        # Crawl for summary, but discard full content
+        # # Crawl for summary, but discard full content
         full_text = self._crawl_and_extract(url)
-        summary = (full_text[:2000] + "...") if full_text else "No content extracted"
+        # summary = (full_text[:2000] + "...") if full_text else "No content extracted"
+        
+        filename = f"{ticker}/{date}__{acc}__{form.replace('/', '_')}.txt"
+
+        try:
+            storage_url = self.storage.save_text(filename, full_text)
+        except Exception as e:
+            self.logger.error("Filings could not be stored")
+            return {}
 
         return {
             "symbol": ticker,
             "timestamp": ts,
+            "access_number": acc, 
             "form_type": form,
             "headline": f"{form} Filing for {ticker}",
-            "content": None,          # <--- SAVES SPACE
-            "summary": summary,       # <--- PROVIDES PREVIEW
             "url": url,
             "date": date,
-            "access_number": acc,
+            "storage_url": storage_url,
             "source": "SEC",
-            "source_type": "filing",
+            "source_type": "filings",
         }
 
     def _publish(self, f):
