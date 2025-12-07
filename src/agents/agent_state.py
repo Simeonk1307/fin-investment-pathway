@@ -11,6 +11,7 @@ class AgentState(TypedDict):
     filings_data:dict
     socials_data:dict
 
+    LLM: any  # LLM instance
     
     # Agent outputs
     news_analysis: dict  # NEW: Structured news output

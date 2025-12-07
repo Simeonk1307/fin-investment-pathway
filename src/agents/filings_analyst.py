@@ -1,4 +1,3 @@
-from src.agents.llm_factory import LLM
 from src.agents.agent_state import AgentState
 import logging
 logger = logging.getLogger(__name__)
@@ -14,6 +13,7 @@ def filings_agent(state:AgentState) -> dict:
     # logger.info(f"📄 Processing filings data through Filings Analyst Agent {state}")
 
     try:
+        LLM = state['LLM']
         filings_input = state['filings_data']
 
         FILINGS_PROMPT = f"""

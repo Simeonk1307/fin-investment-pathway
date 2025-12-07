@@ -1,4 +1,3 @@
-from src.agents.llm_factory import LLM
 from src.agents.agent_state import AgentState
 import logging
 logger = logging.getLogger(__name__)
@@ -18,6 +17,7 @@ def news_agent(state:AgentState) -> dict:
     # logger.info(f"📰 Processing news article through News Analyst Agent {state}")
 
     try:
+        LLM = state['LLM']
         # news_text =f"Headline: {state['news']['headline']}\nDescription: {state['news']['description']}"
         news_text=state['news_data']['news_articles']
         NEWS_PROMPT = f"""

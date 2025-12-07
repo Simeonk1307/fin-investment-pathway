@@ -1,29 +1,94 @@
 from typing import Literal
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatPerplexity
-# from langchain_huggingface import HuggingFaceChat, HuggingFaceHubChat
-from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 from langchain_groq import ChatGroq
-from config.settings import LLMSettings
 
-LLMProvider = Literal["openai", "gemini", "claude", "perplexity","huggingface", "groq"]
+import os
+from typing import Literal
+from langchain_openai import ChatOpenAI
+from langchain_community.chat_models import ChatPerplexity
+from langchain_groq import ChatGroq
 
-llm_settings = LLMSettings()
+LLMProvider = Literal["openai", "perplexity", "groq"]
 
-# safety_model = ChatGroq(
-#                 model="llama-3.1-8b-instant",
-#                 temperature=0.7,
-#                 max_tokens=2048,
-#                 api_key=llm_settings.get_key("groq"),
-#             )
-safety_model = ChatPerplexity(
-                model="sonar",
-                temperature=0.3,
-                pplx_api_key=llm_settings.get_key("perplexity"),
-                timeout=60,  # Important!
-                max_retries=2
+
+class SafetyLLM:
+    """Safeguard LLM instance using Perplexity"""
+    
+    def __init__(self):
+        self.model = ChatPerplexity(
+            model="sonar",
+            temperature=0.3,
+            pplx_api_key=os.getenv("PPLX_API_KEY"),
+            timeout=60,
+            max_retries=2
+        )
+    
+    def get_model(self):
+        return self.model
+
+
+class init_LLM:
+    """Main LLM class with support for multiple providers"""
+    
+    def __init__(
+        self,
+        provider: LLMProvider = "perplexity",
+        model: str = None,
+        temperature: float = 0.3,
+        **kwargs
+    ):
+        self.provider = provider
+        self.model_name = model
+        self.temperature = temperature
+        self.kwargs = kwargs
+        self.model = self._initialize_model()
+    
+    def _initialize_model(self):
+        """Initialize the LLM based on provider"""
+        
+        if self.provider == "openai":
+            return ChatOpenAI(
+                model=self.model_name or "gpt-4o-mini",
+                temperature=self.temperature,
+                api_key=os.getenv("OPENAI_API_KEY"),
+                **self.kwargs
             )
+        
+        elif self.provider == "perplexity":
+            model_name = self.model_name or "sonar"
+            
+            try:
+                return ChatPerplexity(
+                    model=model_name,
+                    temperature=self.temperature,
+                    pplx_api_key=os.getenv("PPLX_API_KEY"),
+                    timeout=60,
+                    max_retries=2,
+                    **self.kwargs
+                )
+            except Exception as e:
+                print(f"[ERROR] Failed to create Perplexity client: {e}")
+                raise
+        
+        elif self.provider == "groq":
+            return ChatGroq(
+                model=self.model_name or "llama-3.1-8b-instant",
+                temperature=self.temperature,
+                max_tokens=2048,
+                api_key=os.getenv("GROQ_API_KEY"),
+                **self.kwargs
+            )
+        
+        else:
+            raise ValueError(f"Unknown provider: {self.provider}")
+    
+    def get_model(self):
+        """Return the underlying model instance"""
+        return self.model
 
+
+# Legacy support - you can keep this if needed for backward compatibility
 def get_llm(
     provider: LLMProvider = "perplexity",
     model: str = None,
@@ -37,59 +102,8 @@ def get_llm(
         llm = get_llm("openai", model="gpt-4")
         llm = get_llm("perplexity", model="sonar")
     """
-    
-    if provider == "openai":
-        return ChatOpenAI(
-            model=model or "gpt-4o-mini",
-            temperature=temperature,
-            api_key=llm_settings.get_key("openai"),
-            **kwargs
-        )
-    
-    elif provider == "perplexity":
-        api_key = llm_settings.get_key("perplexity")
-        # Use correct model name
-        model_name = model or "sonar"
-        
-        try:
-            return ChatPerplexity(
-                model=model_name,
-                temperature=temperature,
-                pplx_api_key=api_key,
-                timeout=60,  # Important!
-                max_retries=2,
-                **kwargs
-            )
-        except Exception as e:
-            print(f"[ERROR] Failed to create Perplexity client: {e}")
+    return init_LLM(provider, model, temperature, **kwargs).get_model()
 
-    elif provider == "huggingface":
-        hf_api_key = llm_settings.get_key("huggingface")
-        if not hf_api_key:
-            raise ValueError("Hugging Face API key is not set in the environment.")
 
-        llm = HuggingFacePipeline.from_model_id(
-            model_id="HuggingFaceH4/zephyr-7b-beta",
-            task="text-generation",
-            pipeline_kwargs=dict(
-                max_new_tokens=512,
-                do_sample=False,
-                repetition_penalty=1.03,
-            ),
-        )
-
-        chat_model = ChatHuggingFace(llm=llm)
-        return chat_model
-    
-    elif provider == "groq":
-        return ChatGroq(
-                model="llama-3.1-8b-instant",
-                temperature=0.7,
-                max_tokens=2048,
-                api_key=llm_settings.get_key("groq"),
-            )
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
-    
-
-LLM = get_llm()
+# Initialize instances for backward compatibility
+safety_model = SafetyLLM().get_model()
