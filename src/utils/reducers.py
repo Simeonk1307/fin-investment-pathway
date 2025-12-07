@@ -1,4 +1,11 @@
 import pathway as pw
+import pathway as pw
+from src.utils.indicators import Indicators
+from src.utils.lstm import Predictor
+
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
 class StdDevAccumulator(pw.BaseCustomAccumulator):
     def __init__(self, cnt, sum, sum_sq):
@@ -48,7 +55,7 @@ class RangeAccumulator(pw.BaseCustomAccumulator):
 range_calc = pw.reducers.udf_reducer(RangeAccumulator)
 
 # check get_weight_timestamp usage in input_pipeline.py
-class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
+class WeightedSentimentScoreAccumulator(pw.BaseCustomAccumulator):
   
   def __init__(self, negative,neutral_,positive,weight):
     self.negative = negative
@@ -59,7 +66,7 @@ class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
   @classmethod
   def from_row(self, row):
     [(negative,neutral_,positive),weight] = row
-    return SentimentScoreAccumulator(negative, neutral_, positive, weight)
+    return WeightedSentimentScoreAccumulator(negative, neutral_, positive, weight)
 
   def update(self, other):
     self.negative += other.negative*self.weight
@@ -69,4 +76,90 @@ class SentimentScoreAccumulator(pw.BaseCustomAccumulator):
   def compute_result(self) -> tuple[float, float, float]:
     return (self.negative, self.neutral_, self.positive)
   
-score_accum = pw.reducers.udf_reducer(SentimentScoreAccumulator)
+score_accum = pw.reducers.udf_reducer(WeightedSentimentScoreAccumulator)
+
+class SimpleSentimentScoreAccumulator(pw.BaseCustomAccumulator):
+  
+  def __init__(self, negative,neutral_,positive,cnt):
+    self.negative = negative
+    self.neutral_ = neutral_
+    self.positive = positive
+    self.cnt = cnt
+
+  @classmethod
+  def from_row(self, row):
+    [(negative,neutral_,positive)] = row
+    return SimpleSentimentScoreAccumulator(negative, neutral_, positive, 1)
+
+  def update(self, other):
+    self.negative += other.negative
+    self.neutral_ += other.neutral_
+    self.positive += other.positive
+    self.cnt+=1
+
+  def compute_result(self) -> tuple[float, float, float]:
+    return (self.negative/self.cnt, self.neutral_/self.cnt, self.positive/self.cnt)
+  
+score_accum = pw.reducers.udf_reducer(SimpleSentimentScoreAccumulator)
+
+
+
+_lstm = Predictor() 
+
+class StockAccumulator(pw.BaseCustomAccumulator):
+    """
+    This accumulator COLLECTS data over the time window,
+    then CALCULATES all indicators when window closes
+    """
+    
+    def __init__(self):
+        self.prices = []
+        self.highs = []
+        self.lows = []
+        self.volumes = []
+    
+    def from_row(self, price, volume):
+        """Called for EACH row entering the window"""
+        acc = StockAccumulator()
+        acc.prices = [price]
+        acc.highs = [price]
+        acc.lows = [price]
+        acc.volumes = [volume]
+        return acc
+    
+    def update(self, other):
+        """Called to MERGE two accumulators"""
+        self.prices.extend(other.prices)
+        self.highs.extend(other.highs)
+        self.lows.extend(other.lows)
+        self.volumes.extend(other.volumes)
+        return self
+    
+    def compute_result(self):
+        """
+        Called when window CLOSES
+        This is WHERE indicators are calculated!
+        """
+        
+        if not self.prices:
+            return {}
+        
+
+        indicators = Indicators.calc(
+            self.prices,
+            self.highs,
+            self.lows,
+            self.volumes
+        )
+        
+        indicators["predicted"] = _lstm.predict(self.prices)
+        
+        # RETURN: {
+        #   "current": 105.3,
+        #   "sma5": 104.8,
+        #   "sma20": 103.2,
+        #   "ema12": 105.0,
+        #   ...
+        #   "predicted": 105.8
+        # }
+        return indicators

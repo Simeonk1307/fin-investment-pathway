@@ -1,4 +1,4 @@
-from asyncio.log import logger
+import logging
 import os
 import pathway as pw
 from langgraph.graph import StateGraph, END
@@ -10,13 +10,13 @@ from src.agents.llm_factory import get_llm
 from src.agents.agent_state import AgentState, data_ingestion_node
 from src.agents.guard_rail import safety_guardrail_node
 from src.agents.filings_analyst import filings_agent
-from src.agents.social_analyst import social_agent
+from src.agents.socials_analyst import socials_agent
 
 from datetime import datetime
 import psutil
 from src.agents.finbert import FinBertSentimentAnalyzer
 # from src.schemas.silver_schemas import FinnHubNewsSchema
- 
+
 #if ctrl+c is pressed, stop the program
 import signal
 import sys
@@ -25,6 +25,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 finbert_analyzer = FinBertSentimentAnalyzer()
+LLM = get_llm('perplexity')
 
 # ============================================================================
 # LANGGRAPH WORKFLOW
@@ -41,7 +42,7 @@ def create_graph() -> StateGraph:
     workflow.add_node("data_ingestion", data_ingestion_node)
     workflow.add_node("news_analysis", news_agent)
     workflow.add_node("filings_analysis", filings_agent)
-    workflow.add_node("social_analysis", social_agent)
+    workflow.add_node("social_analysis", socials_agent)
     workflow.add_node("final_analysis", final_agent)
     workflow.add_node("safety_guardrail", safety_guardrail_node)
 
@@ -65,6 +66,7 @@ def trial_process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_sc
 
     graph = create_graph()
     state = {
+        "LLM" : LLM,
         "ticker": ticker,
 
         "news_data":
@@ -77,7 +79,7 @@ def trial_process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_sc
 
         },
 
-        "social_data":{
+        "socials_data":{
 
         },
 

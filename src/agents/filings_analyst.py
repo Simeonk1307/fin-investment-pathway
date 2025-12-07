@@ -1,12 +1,15 @@
-from src.agents.llm_factory import LLM
 from src.agents.agent_state import AgentState
-import logging
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 
-class FilingsAnalysisResult(BaseModel):
-    ... # Define fields relevant to filings analysis
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
+
+class FilingsAnalysisResult(BaseModel):
+    prediction: str = Field(..., description="Stock price movement prediction: UP, DOWN, or NEUTRAL")
+    confidence: str = Field(..., description="Confidence level: HIGH, MEDIUM, or LOW")
+    reason: str = Field(..., description="Brief reason for the prediction in one line. It should be clear and specific")
 def filings_agent(state:AgentState) -> dict:
     """
     Analyze filings data to extract key insights for investment decision-making.
@@ -14,6 +17,7 @@ def filings_agent(state:AgentState) -> dict:
     # logger.info(f"📄 Processing filings data through Filings Analyst Agent {state}")
 
     try:
+        LLM = state['LLM']
         filings_input = state['filings_data']
 
         FILINGS_PROMPT = f"""
@@ -36,12 +40,15 @@ def filings_agent(state:AgentState) -> dict:
             result_dict = response.model_dump()
         else:
             raise ValueError("Response content is neither dict nor str")
-        
-        # Validate keys as per FilingsAnalysisResult fields
-        # expected_keys = {...}  # Define expected keys based on FilingsAnalysisResult
 
-        # if not expected_keys.issubset(result_dict.keys()):
-        #     raise ValueError("Missing keys in the response dictionary")
+        
+        # Validate keys
+        expected_keys = {"prediction", "confidence", "reason"}
+
+        if not expected_keys.issubset(result_dict.keys()):
+            raise ValueError("Missing keys in the response dictionary")
+        
+        logger.info(f"[AGENT PIPELINE] Filings analysis received : {result_dict}")
         
         return {
             'filings_analysis': result_dict

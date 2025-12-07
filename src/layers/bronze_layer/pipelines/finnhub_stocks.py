@@ -22,15 +22,14 @@ import time
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(
-    service_name="Logger",
+    service_name="bronze_stocks_pipeline_logs",
     otlp_endpoint="http://localhost:4317",
 )
 
 metrics_manager = OTELMetricsManager(
-    service_name="bronze_news_pipeline_metrics",
+    service_name="bronze_stocks_pipeline_metrics",
     otlp_endpoint="http://localhost:4317",
 )
-# logger = logging.getLogger("bronze.news")
 
 ticker_count = metrics_manager.counter(
     "tickers_processed",
@@ -102,9 +101,9 @@ def validate_env(logger):
         "REDPANDA_BRONZE_STOCKS_TOPIC",
         "REDPANDA_BROKERS",
         "REDPANDA_SECURITY_PROTOCOL",
-        "REDPANDA_SASL_MECHANISM",
-        "REDPANDA_USERNAME",
-        "REDPANDA_PASSWORD",
+        # "REDPANDA_SASL_MECHANISM",
+        # "REDPANDA_USERNAME",
+        # "REDPANDA_PASSWORD",
     ]
     missing = [k for k in required if not os.getenv(k)]
     if missing:

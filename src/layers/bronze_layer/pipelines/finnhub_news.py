@@ -30,7 +30,7 @@ logging.basicConfig(
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(
-    service_name="Logger",
+    service_name="bronze_news_pipeline_logs",
     otlp_endpoint="http://localhost:4317",
 )
 
@@ -171,9 +171,9 @@ def main():
         "TICKERS",
         "REDPANDA_BROKERS",
         "REDPANDA_SECURITY_PROTOCOL",
-        "REDPANDA_SASL_MECHANISM",
-        "REDPANDA_USERNAME",
-        "REDPANDA_PASSWORD"
+        # "REDPANDA_SASL_MECHANISM",
+        # "REDPANDA_USERNAME",
+        # "REDPANDA_PASSWORD"
     ]
 
     missing = [v for v in required if not os.getenv(v)]

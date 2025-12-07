@@ -10,6 +10,17 @@ from src.schemas.silver_schemas import FinnHubNewsSchema, FinnHubStockSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
 from src.agents.lstm_model.pathway_udf import predict_and_signal
+from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema, FinnhubFilingsSchema, FinnHubStockSchema
+from src.utils.common import common_config, profiles
+from src.agents.finbert import FinBertSentimentAnalyzer
+from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimentScoreAccumulator
+from src.utils.minio_storage import MinioStorage
+from src.utils.filings_summarizer import FilingsSummarizer
+from src.agents.llm_factory import get_llm
+from src.utils.reducers import StockAccumulator
+
+LLM = get_llm('perplexity')
+
 def debug_statement(*args):
     import time
     logger.info(f"[DEBUG " + " ".join(str(a) for a in args))
@@ -18,10 +29,12 @@ def debug_statement(*args):
 
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-SILVER_TOPIC = os.getenv("REDPANDA_SILVER_NEWS_TOPIC")
-GOLD_TOPIC = os.getenv("REDPANDA_GOLD_NEWS_TOPIC", "gold.news.sentiment")
 finbert_analyzer = FinBertSentimentAnalyzer()
 load_dotenv()
+
+_minio = MinioStorage()
+_summarizer = FilingsSummarizer()
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -125,77 +138,235 @@ def get_sentiment_score(title: str, content: str) -> list[float]:
 
 
 def news_input_pipeline()->pw.Table:
-    suffix = f"-{int(time.time())}" if DEBUG else ""
-    consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"finbert-sentiment-news{suffix}",
-        "auto.offset.reset": "earliest",
-    }
+    TEMP = "NEWS"
+    SCHEMA = FinnHubNewsSchema
+    SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
     
 
+    suffix = f"-{int(time.time())}" if DEBUG else ""
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
+        "auto.offset.reset": "earliest",
+    }
+
     if SILVER_TOPIC is None:
-        logger.error("[GOLD:NEWS] REDPANDA_SILVER_NEWS_TOPIC environment variable not set.")
+        logger.error(f"[GOLD:{TEMP}] REDPANDA_SILVER_{TEMP}_TOPIC environment variable not set.")
         sys.exit(1)
 
-    logger.info(f"[GOLD:NEWS] Reading from {SILVER_TOPIC}")
+    logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
 
-    news = pw.io.redpanda.read(
+    silver = pw.io.redpanda.read(
         rdkafka_settings=consumer,
         topic=SILVER_TOPIC,
-        schema=FinnHubNewsSchema,
+        schema=SCHEMA,
         format="json",
         autocommit_duration_ms=1000,
     )
-    enriched = news.select(
+    enriched = silver.select(
+        timestamp=pw.this.timestamp,
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
         sentiment=get_sentiment_score(pw.this.title, pw.this.content),
     )
 
-    news_table = enriched.groupby(pw.this.symbol).reduce(
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
+
+    final = enriched.groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
         news_articles=pw.reducers.tuple(pw.this.merged),
-        news_sentiment_scores=pw.reducers.tuple(pw.this.sentiment),
+        news_sentiment_scores=pw.reducers.udf_reducer(WeightedSentimentScoreAccumulator)(pw.this.sentiment, pw.this.weight)
     )
 
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
 
-    return news_table
+
+    return final
 
 def social_input_pipeline()->pw.Table:
+    TEMP = "SOCIALS"
+    SCHEMA = SocialsSchema
+    SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
+    
+
     suffix = f"-{int(time.time())}" if DEBUG else ""
     consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"finbert-sentiment-socials{suffix}",
+        "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
         "auto.offset.reset": "earliest",
     }
     
 
     if SILVER_TOPIC is None:
-        logger.error("[GOLD:NEWS] REDPANDA_SILVER_NEWS_TOPIC environment variable not set.")
+        logger.error(f"[GOLD:{TEMP}] REDPANDA_SILVER_{TEMP}_TOPIC environment variable not set.")
         sys.exit(1)
 
-    logger.info(f"[GOLD:NEWS] Reading from {SILVER_TOPIC}")
+    logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
 
-    news = pw.io.redpanda.read(
+    silver = pw.io.redpanda.read(
         rdkafka_settings=consumer,
         topic=SILVER_TOPIC,
-        schema=FinnHubNewsSchema,
+        schema=SCHEMA,
         format="json",
         autocommit_duration_ms=1000,
     )
-
-    enriched = news.select(
+    enriched = silver.select(
+        # timestamp=pw.this.timestamp,
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
         sentiment=get_sentiment_score(pw.this.title, pw.this.content),
+        # weight=get_weight_timestamp(pw.this.timestamp)
     )
 
-    news_table = enriched.groupby(pw.this.symbol).reduce(
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
+
+    final = enriched.groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
-        news_articles=pw.reducers.tuple(pw.this.merged),
-        news_sentiment_scores=pw.reducers.tuple(pw.this.sentiment),
+        socials_articles=pw.reducers.tuple(pw.this.merged),
+        socials_sentiment_scores=pw.reducers.udf_reducer(SimpleSentimentScoreAccumulator)(pw.this.sentiment)
     )
 
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
 
-    return news_table
+    return final
+
+@pw.udf
+def summarize_filing(storage_url: str) -> str:
+    """Fetch filing from MinIO and summarize to 20 points"""
+    try:
+        if not storage_url:
+            return ""
+        
+        # Clean the URL
+        url = storage_url.strip().strip('"').strip("'").replace('\\"', '')
+        
+        logger.info(f"Processing filing: {url}")
+        
+        # Fetch content
+        content = _minio.read_filing(url)
+        
+        if not content or len(content.strip()) < 100:
+            logger.warning(f"Empty or too short content for {url}")
+            return ""
+        
+        logger.info(f"Content length: {len(content)} chars")
+        
+        # Summarize
+        summary = _summarizer.summarize(content)
+        
+        if not summary:
+            logger.warning(f"Empty summary for {url}")
+            return ""
+        
+        logger.info(f"Summary generated: {len(summary)}")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Error processing filing {storage_url}: {e}", exc_info=True)
+        return ""
+
+def filings_input_pipeline() -> pw.Table:
+    SILVER_TOPIC = os.getenv("REDPANDA_SILVER_FILINGS_TOPIC")
+    
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"gold-filings-{int(time.time())}" if DEBUG else "gold-filings",
+        "auto.offset.reset": "earliest",
+    }
+    
+    silver = pw.io.redpanda.read(
+        rdkafka_settings=consumer,
+        topic=SILVER_TOPIC,
+        schema=FinnhubFilingsSchema,
+        format="json",
+        autocommit_duration_ms=1000,
+    )
+    
+    # Group and get sorted URLs
+    grouped = silver.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        all_urls=pw.reducers.sorted_tuple(pw.this.storage_url)
+    )
+    
+    # Take last 5
+    top5 = grouped.select(
+        symbol=pw.this.symbol,
+        top5_urls=pw.apply(lambda urls: urls[-5:], pw.this.all_urls)
+    )
+    
+    # Flatten the tuple back into rows
+    flattened = top5.flatten(pw.this.top5_urls).select(
+        symbol=pw.this.symbol,
+        storage_url=pw.this.top5_urls
+    )
+    
+    # Now summarize each row
+    with_summary = flattened.select(
+        symbol=pw.this.symbol,
+        filing_summary=summarize_filing(pw.this.storage_url)
+        # filing_summary=pw.this.symbol
+    )
+    # pw.io.csv.write(with_summary,'debug_output/filings_summary.csv')
+    # @pw.udf
+    # def debug(**args):
+    #     logger.info(args)
+    #     return args
+    # # Group back
+    # final = with_summary.groupby(pw.this.symbol).reduce(
+    #     symbol=pw.this.symbol,
+    #     debug = debug(pw.this.symbol),
+    #     filing_summaries=pw.reducers.tuple(pw.this.filing_summary)
+    # )
+    
+    return with_summary
+
+# src/input_pipeline.py
+
+def stock_analysis_pipeline() -> pw.Table:
+    SILVER_TOPIC = os.getenv("REDPANDA_SILVER_STOCK_TOPIC")
+    
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"stock-{int(time.time())}" if DEBUG else "stock",
+        "auto.offset.reset": "earliest",
+    }
+    
+    silver = pw.io.redpanda.read(
+        rdkafka_settings=consumer,
+        topic=SILVER_TOPIC,
+        schema=FinnHubStockSchema,
+        format="json",
+        autocommit_duration_ms=1000,
+    )
+    
+    # 5min window
+    w5 = silver.windowby(
+        pw.this.timestamp,
+        window=pw.temporal.sliding(hop=pw.Duration("5m"), duration=pw.Duration("5m")),
+        instance=pw.this.symbol
+    ).reduce(
+        symbol=pw.this.symbol,
+        time=pw.this._pw_window_end,
+        m5=pw.reducers.udf_reducer(StockAccumulator)(pw.this.price, pw.this.volume)
+    )
+    
+    # 15min window
+    w15 = silver.windowby(
+        pw.this.timestamp,
+        window=pw.temporal.sliding(hop=pw.Duration("15m"), duration=pw.Duration("15m")),
+        instance=pw.this.symbol
+    ).reduce(
+        symbol=pw.this.symbol,
+        time=pw.this._pw_window_end,
+        m15=pw.reducers.udf_reducer(StockAccumulator)(pw.this.price, pw.this.volume)
+    )
+    
+    # Join
+    final = w5.join(w15, pw.left.symbol == pw.right.symbol, pw.left.time == pw.right.time).select(
+        symbol=pw.left.symbol,
+        timestamp=pw.left.time,
+        analysis_5min=pw.left.m5,
+        analysis_15min=pw.right.m15
+    )
+    
+    return final
+
 
 
 def stock_signal_pipeline() -> pw.Table:
@@ -267,8 +438,14 @@ def stock_signal_pipeline() -> pw.Table:
 
 
 if __name__ == "__main__":
-    os.makedirs("debug_output", exist_ok=True)
+    output_path = "debug_output/inputs"
+    os.makedirs(output_path, exist_ok=True)
     news_table= news_input_pipeline()
-    pw.io.csv.write(news_table, "debug_output/news_sentiment.csv")
+    socials_table = social_input_pipeline()
+    filings_table = filings_input_pipeline()
+
+    pw.io.csv.write(news_table, f"{output_path}/news_sentiment.csv")
+    pw.io.csv.write(socials_table, f"{output_path}/socials_sentiment.csv")
+    pw.io.csv.write(filings_table, f"{output_path}/filings_sentiment.csv")
     # pw.io.jsonlines.write(news_table, "debug_output/news_sentiment.jsonl")
     pw.run()

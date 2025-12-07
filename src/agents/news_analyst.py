@@ -1,8 +1,9 @@
-from src.agents.llm_factory import LLM
 from src.agents.agent_state import AgentState
-import logging
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
+
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
 class NewsAnalysisResult(BaseModel):
     prediction: str = Field(..., description="Stock price movement prediction: UP, DOWN, or NEUTRAL")
@@ -18,6 +19,7 @@ def news_agent(state:AgentState) -> dict:
     # logger.info(f"📰 Processing news article through News Analyst Agent {state}")
 
     try:
+        LLM = state['LLM']
         # news_text =f"Headline: {state['news']['headline']}\nDescription: {state['news']['description']}"
         news_text=state['news_data']['news_articles']
         NEWS_PROMPT = f"""
@@ -28,7 +30,7 @@ def news_agent(state:AgentState) -> dict:
         
         COMPANY : {state['ticker']}
 
-        INPUT: {news_text}(tuple of news articles over past week)
+        INPUT: {news_text}(tuple of news articles over past month)
 
         Based on this news, predict:
         1. Will the stock price go UP, DOWN, or stay NEUTRAL?
@@ -53,7 +55,7 @@ def news_agent(state:AgentState) -> dict:
             raise ValueError("Missing keys in the response dictionary")
         
         # logger.info(f"News Analyst Response: {response} , type  {type(response)}")
-       
+        logger.info(f"[AGENT PIPELINE] News analysis received : {result_dict}")
         return {
             'news_analysis': result_dict
         }
