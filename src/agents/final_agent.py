@@ -1,4 +1,3 @@
-from src.agents.llm_factory import LLM
 from src.agents.agent_state import AgentState
 import logging
 logger = logging.getLogger(__name__)
@@ -19,6 +18,7 @@ def final_agent(state:AgentState) -> dict:
     # logger.info(f"🧠 Processing final analysis through Final Agent {state}")
 
     try:
+        LLM = state['LLM']
         FINAL_PROMPT = f"""
         ROLE: Final Investment Analyst.
         You are a seasoned financial analyst specializing in stock market predictions.
@@ -71,7 +71,6 @@ def final_agent(state:AgentState) -> dict:
         }
     
     except Exception as e:
-        logger.error(f"Error processing final agent response: {e}")
         return {
             "final_analysis": {
                 "prediction": "NEUTRAL",

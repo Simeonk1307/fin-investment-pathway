@@ -1,4 +1,3 @@
-from src.agents.llm_factory import LLM
 from src.agents.agent_state import AgentState
 import logging
 logger = logging.getLogger(__name__)
@@ -17,6 +16,7 @@ def socials_agent(state:AgentState) -> dict:
     # logger.info(f"💬 Processing social media data through Social Analyst Agent {state}")
 
     try:
+        LLM = state['LLM']
         socials_input = state['socials_data']['socials_articles']
 
         SOCIALS_PROMPT = f"""

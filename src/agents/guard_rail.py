@@ -27,7 +27,7 @@ def safety_guardrail_node(state: AgentState) -> AgentState:
         final_analysis["prediction"] = "NEUTRAL"
         final_analysis["confidence"] = "LOW"
         final_analysis["reason"] = f"Analysis flagged by safety review. - output {final_analysis['reason']}"
-        final_analysis["strategy"] = "Unable to determine strategy due to safety review. Best to HOLD or SELL."
+        final_analysis["strategy"] = "Unable to determine strategy. Best to HOLD or SELL."
     return {
         'final_analysis': final_analysis
     }

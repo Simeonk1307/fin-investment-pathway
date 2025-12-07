@@ -1,6 +1,7 @@
 from src.input_pipeline import news_input_pipeline,social_input_pipeline
 import pathway as pw
-from src.agents.agent_pipeline import create_graph
+from src.agents.agent_pipeline import  create_graph
+from src.agents.llm_factory import get_llm
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 import signal
@@ -13,7 +14,7 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 def shutdown_handler(signum, frame):
     print("[Pipeline] Shutdown signal received", flush=True)
     os._exit(0)
-
+LLM = get_llm('perplexity')
 
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
@@ -31,6 +32,7 @@ def process_ticker(ticker: str,
     logger.info("inside")
     graph = create_graph()
     state = {
+        "LLM" : LLM,
         "ticker": ticker,
 
         "news_data":

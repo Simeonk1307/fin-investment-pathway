@@ -25,6 +25,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 finbert_analyzer = FinBertSentimentAnalyzer()
+LLM = get_llm('perplexity')
 
 # ============================================================================
 # LANGGRAPH WORKFLOW
@@ -65,6 +66,7 @@ def trial_process_ticker(ticker: str,news_articles: tuple[str],news_sentiment_sc
 
     graph = create_graph()
     state = {
+        "LLM" : LLM,
         "ticker": ticker,
 
         "news_data":
