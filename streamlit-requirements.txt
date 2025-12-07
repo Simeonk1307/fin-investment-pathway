@@ -1,0 +1,8 @@
+streamlit
+yfinance
+transformers
+torch
+neo4j
+spacy
+python-dotenv
+pandas
