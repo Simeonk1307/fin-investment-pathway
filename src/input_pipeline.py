@@ -11,6 +11,7 @@ from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
 from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimentScoreAccumulator
 from src.utils.minio_storage import MinioStorage
+from src.utils.filings_summarizer import FilingsSummarizer
 from src.agents.llm_factory import get_llm
 LLM = get_llm('perplexity')
 
@@ -24,6 +25,10 @@ def debug_statement(*args):
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 finbert_analyzer = FinBertSentimentAnalyzer()
 load_dotenv()
+
+_minio = MinioStorage()
+_summarizer = FilingsSummarizer()
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -243,36 +248,49 @@ def social_input_pipeline()->pw.Table:
 
     return final
 
-_minio = None
-
-def get_minio():
-    global _minio
-    if _minio is None:
-        _minio = MinioStorage()
-    return _minio
-
-
 @pw.udf
-def udf_extract_filing(path: str) -> str:
-    return get_minio().read_filing_extract(path, max_total=2000)
-
+def summarize_filing(storage_url: str) -> str:
+    """Fetch filing from MinIO and summarize to 20 points"""
+    try:
+        if not storage_url:
+            return ""
+        
+        # Clean the URL
+        url = storage_url.strip().strip('"').strip("'").replace('\\"', '')
+        
+        logger.info(f"Processing filing: {url}")
+        
+        # Fetch content
+        content = _minio.read_filing(url)
+        
+        if not content or len(content.strip()) < 100:
+            logger.warning(f"Empty or too short content for {url}")
+            return ""
+        
+        logger.info(f"Content length: {len(content)} chars")
+        
+        # Summarize
+        summary = _summarizer.summarize(content)
+        
+        if not summary:
+            logger.warning(f"Empty summary for {url}")
+            return ""
+        
+        logger.info(f"Summary generated: {len(summary)} chars")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Error processing filing {storage_url}: {e}", exc_info=True)
+        return ""
 
 def filings_input_pipeline() -> pw.Table:
-    TEMP = "FILINGS"
-    SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
-
-    if not SILVER_TOPIC:
-        logger.error(f"[GOLD:{TEMP}] Topic not set")
-        sys.exit(1)
-
-    suffix = f"-{int(time.time())}" if DEBUG else ""
+    SILVER_TOPIC = os.getenv("REDPANDA_SILVER_FILINGS_TOPIC")
+    
     consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"gold-filings{suffix}",
+        "group.id": f"gold-filings-{int(time.time())}" if DEBUG else "gold-filings",
         "auto.offset.reset": "earliest",
     }
-
-    logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
-
+    
     silver = pw.io.redpanda.read(
         rdkafka_settings=consumer,
         topic=SILVER_TOPIC,
@@ -280,16 +298,39 @@ def filings_input_pipeline() -> pw.Table:
         format="json",
         autocommit_duration_ms=1000,
     )
-
-    enriched = silver.select(
+    
+    # Group and get sorted URLs
+    grouped = silver.groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
-        filings_summary=udf_extract_filing(pw.this.storage_url),
-    ).groupby(pw.this.symbol).reduce(
-        symbol=pw.this.symbol,
-        filings_summary=pw.reducers.tuple(pw.this.filings_summary),
+        all_urls=pw.reducers.sorted_tuple(pw.this.storage_url)
     )
+    
+    # Take last 5
+    top5 = grouped.select(
+        symbol=pw.this.symbol,
+        top5_urls=pw.apply(lambda urls: urls[-5:], pw.this.all_urls)
+    )
+    
+    # Flatten the tuple back into rows
+    flattened = top5.flatten(pw.this.top5_urls).select(
+        symbol=pw.this.symbol,
+        storage_url=pw.this.top5_urls
+    )
+    
+    # Now summarize each row
+    with_summary = flattened.select(
+        symbol=pw.this.symbol,
+        filing_summary=summarize_filing(pw.this.storage_url)
+    )
+    
+    # Group back
+    final = with_summary.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        filing_summaries=pw.reducers.tuple(pw.this.filing_summary)
+    )
+    
+    return final
 
-    return enriched
 
 
 

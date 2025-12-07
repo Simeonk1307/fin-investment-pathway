@@ -1,10 +1,11 @@
-import re
 import os
 from minio import Minio
 import io
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class MinioStorage:
@@ -47,20 +48,9 @@ class MinioStorage:
             resp.close()
             resp.release_conn()
             return content
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error reading text from {filepath}: {e}")
             return ""
-
-    def read_filing_extract(self, filepath: str, max_total: int = 2000) -> str:
-        """Read filing and extract key SEC sections only."""
-        filepath = self._clean_path(filepath)
-        if not filepath:
-            return ""
-
-        raw = self.read_text(filepath)
-        if not raw:
-            return ""
-
-        return self._extract_key_sections(raw, max_total)
 
     def _clean_path(self, path: str) -> str:
         if not path:
@@ -70,37 +60,37 @@ class MinioStorage:
         path = path.replace('"', '').replace("'", "")
         return path.rstrip('\\/')
 
-    def _extract_key_sections(self, text: str, max_total: int = 2000) -> str:
-        """Extract important sections from SEC filing."""
-        if not text:
+    def read_filing(self, storage_url: str) -> str:
+        """Read filing content from storage_url"""
+        try:
+            if not storage_url:
+                return ""
+            
+            url = str(storage_url).strip().strip('"').strip("'")
+            url = url.replace('\\"', '').replace("\\'", "")
+            
+            if "minio://" in url:
+                path = url.replace("minio://", "")
+                if path.startswith(f"{self.bucket}/"):
+                    path = path.replace(f"{self.bucket}/", "", 1)
+            else:
+                path = url
+                if path.startswith(f"{self.bucket}/"):
+                    path = path.replace(f"{self.bucket}/", "", 1)
+            
+            path = self._clean_path(path)
+            
+            logger.info(f"Reading filing: bucket={self.bucket}, path={path}")
+            
+            content = self.read_text(path)
+            
+            if content:
+                logger.info(f"Successfully read {len(content)} characters")
+            else:
+                logger.warning(f"Empty content for path: {path}")
+            
+            return content
+            
+        except Exception as e:
+            logger.error(f"Error reading filing from {storage_url}: {e}")
             return ""
-
-        # Clean HTML/XML
-        text = re.sub(r'<[^>]+>', ' ', text)
-        text = re.sub(r'\s+', ' ', text)
-
-        sections = [
-            (r"Item\s*1A[.\s:]*Risk\s*Factors(.*?)(?=Item\s*\d|$)", "RISKS"),
-            (r"Item\s*7[.\s:]*Management.s Discussion(.*?)(?=Item\s*\d|$)", "MD&A"),
-            (r"Item\s*1[.\s:]*Business(.*?)(?=Item\s*\d|$)", "BUSINESS"),
-            (r"Item\s*2\.01|Item\s*5\.02(.*?)(?=Item\s*\d|$)", "MATERIAL_EVENTS"),
-        ]
-
-        extracted = []
-        chars_used = 0
-        per_section = max_total // 3
-
-        for pattern, label in sections:
-            if chars_used >= max_total:
-                break
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            if match:
-                content = match.group(1).strip()[:per_section]
-                if len(content) > 50:
-                    extracted.append(f"[{label}]: {content}")
-                    chars_used += len(content)
-
-        if not extracted:
-            return f"[EXCERPT]: {text[:max_total]}"
-
-        return "\n\n".join(extracted)
