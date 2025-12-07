@@ -13,20 +13,25 @@ class MinioStorage:
             secure=False
         )
         self.bucket = os.getenv("MINIO_BUCKET", "filings")
+
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
 
-    def save_text(self, filename: str, text: str):
+    def save_text(self, filepath: str, text: str):
         data = text.encode("utf-8")
         stream = io.BytesIO(data)
         self.client.put_object(
-            self.bucket, filename, stream, len(data), content_type="text/plain"
+            bucket_name=self.bucket,
+            object_name=filepath,
+            data=stream,
+            length=len(data),
+            content_type="text/plain"
         )
-        return f"s3://{self.bucket}/{filename}"
-    
-    def read_from_minio(self, bucket: str, filename: str):
-        resp = self.client.get_object(bucket, filename)
+        return filepath  # Pathway stores this string
+
+    def read_text(self, filepath: str):
+        resp = self.client.get_object(self.bucket, filepath)
         content = resp.read().decode("utf-8")
-
+        resp.close()
+        resp.release_conn()
         return content
-

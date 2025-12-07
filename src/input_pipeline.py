@@ -6,10 +6,12 @@ import signal
 import logging
 import pathway as pw
 from dotenv import load_dotenv
-from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema
+from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema, FinnhubFilingsSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
 from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimentScoreAccumulator
+from src.utils.minio_storage import MinioStorage
+
 def debug_statement(*args):
     import time
     logger.info(f"[DEBUG " + " ".join(str(a) for a in args))
@@ -233,6 +235,76 @@ def social_input_pipeline()->pw.Table:
         symbol=pw.this.symbol,
         socials_articles=pw.reducers.tuple(pw.this.merged),
         socials_sentiment_scores=pw.reducers.udf_reducer(SimpleSentimentScoreAccumulator)(pw.this.sentiment)
+    )
+
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
+
+    return final
+
+import groq
+
+client = groq.Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def summarize_with_llm(text: str):
+    prompt = f"Summarize this SEC filing for investors:\n{text[:15000]}"
+    
+    try:
+        resp = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=400,
+            temperature=0.2
+        )
+        return resp.choices[0].message["content"]
+    except Exception as e:
+        return f"[LLM ERROR] {e}"
+    
+
+def summarize_filing(path):
+    minio = MinioStorage()
+    text = minio.read_text(path)
+    if not text:
+        return "No text found"
+    return summarize_with_llm(text)
+
+def filings_input_pipeline()->pw.Table:
+    TEMP = "FILINGS"
+    SCHEMA = FinnhubFilingsSchema
+    SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
+    
+
+    suffix = f"-{int(time.time())}" if DEBUG else ""
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
+        "auto.offset.reset": "earliest",
+    }
+    
+
+    if SILVER_TOPIC is None:
+        logger.error(f"[GOLD:{TEMP}] REDPANDA_SILVER_{TEMP}_TOPIC environment variable not set.")
+        sys.exit(1)
+
+    logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
+
+    silver = pw.io.redpanda.read(
+        rdkafka_settings=consumer,
+        topic=SILVER_TOPIC,
+        schema=SCHEMA,
+        format="json",
+        autocommit_duration_ms=1000,
+    )
+
+    enriched = silver.select(
+        symbol=pw.this.symbol,
+        access_number=pw.this.access_number,
+        summary=pw.apply(summarize_filing, pw.this.storage_url),
+    )
+
+    logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
+
+    final = enriched.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        filings_summaries=pw.reducers.tuple(pw.this.summary),
     )
 
     logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
