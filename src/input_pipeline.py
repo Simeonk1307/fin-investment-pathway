@@ -11,6 +11,8 @@ from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
 from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimentScoreAccumulator
 from src.utils.minio_storage import MinioStorage
+from src.agents.llm_factory import get_llm
+LLM = get_llm('perplexity')
 
 def debug_statement(*args):
     import time
@@ -241,75 +243,54 @@ def social_input_pipeline()->pw.Table:
 
     return final
 
-import groq
+_minio = None
 
-client = groq.Groq(api_key=os.getenv("GROQ_API_KEY"))
+def get_minio():
+    global _minio
+    if _minio is None:
+        _minio = MinioStorage()
+    return _minio
 
-def summarize_with_llm(text: str):
-    prompt = f"Summarize this SEC filing for investors:\n{text[:15000]}"
-    
-    try:
-        resp = client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.2
-        )
-        return resp.choices[0].message["content"]
-    except Exception as e:
-        return f"[LLM ERROR] {e}"
-    
 
-def summarize_filing(path):
-    minio = MinioStorage()
-    text = minio.read_text(path)
-    if not text:
-        return "No text found"
-    return summarize_with_llm(text)
+@pw.udf
+def udf_extract_filing(path: str) -> str:
+    return get_minio().read_filing_extract(path, max_total=2000)
 
-def filings_input_pipeline()->pw.Table:
+
+def filings_input_pipeline() -> pw.Table:
     TEMP = "FILINGS"
-    SCHEMA = FinnhubFilingsSchema
     SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
-    
+
+    if not SILVER_TOPIC:
+        logger.error(f"[GOLD:{TEMP}] Topic not set")
+        sys.exit(1)
 
     suffix = f"-{int(time.time())}" if DEBUG else ""
     consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
+        "group.id": f"gold-filings{suffix}",
         "auto.offset.reset": "earliest",
     }
-    
-
-    if SILVER_TOPIC is None:
-        logger.error(f"[GOLD:{TEMP}] REDPANDA_SILVER_{TEMP}_TOPIC environment variable not set.")
-        sys.exit(1)
 
     logger.info(f"[GOLD:{TEMP}] Reading from {SILVER_TOPIC}")
 
     silver = pw.io.redpanda.read(
         rdkafka_settings=consumer,
         topic=SILVER_TOPIC,
-        schema=SCHEMA,
+        schema=FinnhubFilingsSchema,
         format="json",
         autocommit_duration_ms=1000,
     )
 
     enriched = silver.select(
         symbol=pw.this.symbol,
-        access_number=pw.this.access_number,
-        summary=pw.apply(summarize_filing, pw.this.storage_url),
-    )
-
-    logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
-
-    final = enriched.groupby(pw.this.symbol).reduce(
+        filings_summary=udf_extract_filing(pw.this.storage_url),
+    ).groupby(pw.this.symbol).reduce(
         symbol=pw.this.symbol,
-        filings_summaries=pw.reducers.tuple(pw.this.summary),
+        filings_summary=pw.reducers.tuple(pw.this.filings_summary),
     )
 
-    logger.info(f"[GOLD:{TEMP}] {TEMP} Data analysed")
+    return enriched
 
-    return final
 
 
 
@@ -319,9 +300,12 @@ def filings_input_pipeline()->pw.Table:
 
 if __name__ == "__main__":
     os.makedirs("debug_output", exist_ok=True)
-    news_table= news_input_pipeline()
-    socials_table = social_input_pipeline()
-    pw.io.csv.write(news_table, "debug_output/news_sentiment.csv")
-    pw.io.csv.write(socials_table, "debug_output/socials_sentiment.csv")
+    # news_table= news_input_pipeline()
+    # socials_table = social_input_pipeline()
+    filings_table = filings_input_pipeline()
+
+    # pw.io.csv.write(news_table, "debug_output/news_sentiment.csv")
+    # pw.io.csv.write(socials_table, "debug_output/socials_sentiment.csv")
+    pw.io.csv.write(filings_table, "debug_output/socials_sentiment.csv")
     # pw.io.jsonlines.write(news_table, "debug_output/news_sentiment.jsonl")
     pw.run()

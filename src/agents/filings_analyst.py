@@ -4,8 +4,9 @@ logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 
 class FilingsAnalysisResult(BaseModel):
-    ... # Define fields relevant to filings analysis
-
+    prediction: str = Field(..., description="Stock price movement prediction: UP, DOWN, or NEUTRAL")
+    confidence: str = Field(..., description="Confidence level: HIGH, MEDIUM, or LOW")
+    reason: str = Field(..., description="Brief reason for the prediction in one line. It should be clear and specific")
 def filings_agent(state:AgentState) -> dict:
     """
     Analyze filings data to extract key insights for investment decision-making.
@@ -36,12 +37,13 @@ def filings_agent(state:AgentState) -> dict:
             result_dict = response.model_dump()
         else:
             raise ValueError("Response content is neither dict nor str")
-        
-        # Validate keys as per FilingsAnalysisResult fields
-        # expected_keys = {...}  # Define expected keys based on FilingsAnalysisResult
 
-        # if not expected_keys.issubset(result_dict.keys()):
-        #     raise ValueError("Missing keys in the response dictionary")
+        
+        # Validate keys
+        expected_keys = {"prediction", "confidence", "reason"}
+
+        if not expected_keys.issubset(result_dict.keys()):
+            raise ValueError("Missing keys in the response dictionary")
         
         return {
             'filings_analysis': result_dict

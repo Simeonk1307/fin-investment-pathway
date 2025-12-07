@@ -13,9 +13,6 @@ volumes:
   neo4j_plugins:
 
 services:
-  ##################
-  # Redpanda Brokers
-  ##################
   redpanda-0:
     image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
     container_name: redpanda-0
@@ -59,9 +56,6 @@ services:
       - start
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:29092
       - --advertise-kafka-addr internal://redpanda-1:9092,external://localhost:29092
-      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:28082
-      - --advertise-pandaproxy-addr internal://redpanda-1:8082,external://localhost:28082
-      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:28081
       - --rpc-addr redpanda-1:33145
       - --advertise-rpc-addr redpanda-1:33145
       - --mode dev-container
@@ -73,6 +67,17 @@ services:
       RP_BOOTSTRAP_USER: "superuser:secretpassword"
     volumes:
       - redpanda-1:/var/lib/redpanda/data
+    ports:
+      - 29092:29092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      redpanda-0:
+        condition: service_healthy
 
   redpanda-2:
     image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
@@ -82,9 +87,6 @@ services:
       - start
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:39092
       - --advertise-kafka-addr internal://redpanda-2:9092,external://localhost:39092
-      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:38082
-      - --advertise-pandaproxy-addr internal://redpanda-2:8082,external://localhost:38082
-      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:38081
       - --rpc-addr redpanda-2:33145
       - --advertise-rpc-addr redpanda-2:33145
       - --mode dev-container
@@ -96,10 +98,18 @@ services:
       RP_BOOTSTRAP_USER: "superuser:secretpassword"
     volumes:
       - redpanda-2:/var/lib/redpanda/data
+    ports:
+      - 39092:39092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      redpanda-0:
+        condition: service_healthy
 
-  ####################
-  # Redpanda Console #
-  ####################
   console:
     container_name: redpanda-console
     image: docker.redpanda.com/redpandadata/console:v3.3.2
@@ -108,7 +118,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      KAFKA_BROKERS: redpanda-0:9092
+      KAFKA_BROKERS: redpanda-0:9092,redpanda-1:9092,redpanda-2:9092
       KAFKA_SCHEMAREGISTRY_ENABLED: "true"
       KAFKA_SCHEMAREGISTRY_URLS: http://redpanda-0:8081
       REDPANDA_ADMINAPI_ENABLED: "true"
@@ -117,10 +127,6 @@ services:
       redpanda-0:
         condition: service_healthy
 
-
-  ####################
-  # MinIO (optional)
-  ####################
   minio:
     container_name: minio
     image: minio/minio
@@ -141,19 +147,18 @@ services:
     container_name: redpanda-topic-init
     user: root
     depends_on:
-      - redpanda-0
-      - redpanda-1
-      - redpanda-2
+      redpanda-0:
+        condition: service_healthy
+      redpanda-1:
+        condition: service_healthy
+      redpanda-2:
+        condition: service_healthy
     networks:
       - redpanda_network
     volumes:
       - ./scripts:/scripts
-    entrypoint: ["/bin/bash", "-c", "chmod +x ./scripts/create_topics.sh && ./scripts/create_topics.sh"]
+    entrypoint: ["/bin/bash", "-c", "chmod +x /scripts/create_topics.sh && sleep 5 && /scripts/create_topics.sh"]
 
-
-  ####################
-  # lgtm
-  ####################
   lgtm:
     container_name: lgtm
     image: grafana/otel-lgtm:latest
@@ -166,7 +171,8 @@ services:
       - "3100:3100"
       - "3200:3200"
     depends_on:
-      - redpanda-0
+      redpanda-0:
+        condition: service_healthy
 
   neo4j:
     image: neo4j:5.25.1

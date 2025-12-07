@@ -1,4 +1,4 @@
-from src.input_pipeline import news_input_pipeline,social_input_pipeline
+from src.input_pipeline import news_input_pipeline,social_input_pipeline, filings_input_pipeline
 import pathway as pw
 from src.agents.agent_pipeline import  create_graph
 from src.agents.llm_factory import get_llm
@@ -27,7 +27,8 @@ logging.getLogger("confluent_kafka").setLevel(logging.CRITICAL)
 
 def process_ticker(ticker: str,
                    news_articles: tuple[str],news_sentiment_scores: tuple[float],
-                   socials_articles: tuple[str], socials_sentiment_scores: tuple[float]):
+                   socials_articles: tuple[str], socials_sentiment_scores: tuple[float],
+                   filings_summary:tuple[str]):
 
     logger.info("inside")
     graph = create_graph()
@@ -44,6 +45,7 @@ def process_ticker(ticker: str,
         "filings_data":{
             # check filings data
             # check  filings_analyst and  rewrite prompt and define FilingsAnalysisResult
+            "filings_data" : filings_summary,
 
         },
 
@@ -89,6 +91,7 @@ def process_ticker(ticker: str,
 def run_agent_pipeline(
     news_table: pw.Table,
     socials_table: pw.Table,
+    filings_table: pw.Table,
     # market_table: pw.Table = None, 
     # fundamentals_table: pw.Table = None, 
     # sentiment_table: pw.Table = None, 
@@ -113,9 +116,15 @@ def run_agent_pipeline(
         socials_sentiment_scores=pw.this.socials_sentiment_scores,
     )
 
+    analysed_filings = filings_table.select(
+        symbol=pw.this.symbol,
+        filings_summary=pw.this.filings_summary,
+    )
+
     logger.info(f"[SOCIALS] Sentiment analysis done")
 
     agents_input = analysed_news.join(analysed_socials, pw.left.symbol == pw.right.symbol)
+    agents_input = agents_input.join(analysed_filings, pw.left.symbol == pw.right.symbol)
      # Process through LangGraph
     agents_output = agents_input.select(
         symbol=pw.this.symbol,
@@ -127,7 +136,8 @@ def run_agent_pipeline(
             pw.this.news_articles,
             pw.this.news_sentiment_scores,
             pw.this.socials_articles,
-            pw.this.socials_sentiment_scores)
+            pw.this.socials_sentiment_scores,
+            pw.this.filings_summary)
     )
     
     # Process through LangGraph
@@ -151,10 +161,12 @@ def run_main_pipeline():
 
     news_table = news_input_pipeline()
     socials_table = social_input_pipeline()
+    filings_table = filings_input_pipeline()
 
     run_agent_pipeline(
         news_table=news_table,
         socials_table=socials_table,
+        filings_table=filings_table,
         # market_table=market_table,
         # fundamentals_table=fundamentals_table,
         # sentiment_table=sentiment_table,

@@ -47,5 +47,6 @@ def data_ingestion_node(state: AgentState) -> AgentState:
     if ('socials_sentiment_scores' not in state['socials_data']):
         raise KeyError("Missing socials sentiment scores in state")
     
+    
 
     return None
