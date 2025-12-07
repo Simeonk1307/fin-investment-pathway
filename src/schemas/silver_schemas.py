@@ -57,6 +57,7 @@ class FinnhubFilingsSchema(pw.Schema):
     headline: str
     url: str
     date: str
+    storage_url: str
     source: str
     source_type: str
 
