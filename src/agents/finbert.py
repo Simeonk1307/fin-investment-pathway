@@ -3,6 +3,10 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import pathway as pw
 
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
+
 class FinBertSentimentAnalyzer:
     def __init__(self):
         self.model_name = "ProsusAI/finbert"
@@ -16,8 +20,7 @@ class FinBertSentimentAnalyzer:
 
  
     def analyze_sentiment(self, text: str) -> tuple[float, float, float]:
-
-        logger = logging.getLogger(__name__)
+        # return (0,0,0)
         # logger.info(f"Analyzing sentiment for text{text} of length {len(text)}")
         # def analyze_sentiment(self, text: str) -> float:
         # def analyze_sentiment(self, text: str) -> tuple[str, float]:
@@ -42,6 +45,7 @@ class FinBertSentimentAnalyzer:
         # return  float(sentiment_score)
         return_order = ["negative", "neutral", "positive"]
         return_probabilties = [order_probabilties[label] for label in return_order]
+        logger.info(f"[FINBERT] Sentiment Analysed {return_probabilties}")
         return tuple(return_probabilties)
     
     def analyze_batch(self, texts: list[str]) -> list[tuple[str, float]]:

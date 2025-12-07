@@ -6,13 +6,15 @@ import signal
 import logging
 import pathway as pw
 from dotenv import load_dotenv
-from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema, FinnhubFilingsSchema
+from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema, FinnhubFilingsSchema, FinnHubStockSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
 from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimentScoreAccumulator
 from src.utils.minio_storage import MinioStorage
 from src.utils.filings_summarizer import FilingsSummarizer
 from src.agents.llm_factory import get_llm
+from src.utils.reducers import StockAccumulator
+
 LLM = get_llm('perplexity')
 
 def debug_statement(*args):
@@ -276,7 +278,7 @@ def summarize_filing(storage_url: str) -> str:
             logger.warning(f"Empty summary for {url}")
             return ""
         
-        logger.info(f"Summary generated: {len(summary)} chars")
+        logger.info(f"Summary generated: {len(summary)}")
         return summary
         
     except Exception as e:
@@ -321,16 +323,71 @@ def filings_input_pipeline() -> pw.Table:
     with_summary = flattened.select(
         symbol=pw.this.symbol,
         filing_summary=summarize_filing(pw.this.storage_url)
+        # filing_summary=pw.this.symbol
+    )
+    # pw.io.csv.write(with_summary,'debug_output/filings_summary.csv')
+    # @pw.udf
+    # def debug(**args):
+    #     logger.info(args)
+    #     return args
+    # # Group back
+    # final = with_summary.groupby(pw.this.symbol).reduce(
+    #     symbol=pw.this.symbol,
+    #     debug = debug(pw.this.symbol),
+    #     filing_summaries=pw.reducers.tuple(pw.this.filing_summary)
+    # )
+    
+    return with_summary
+
+# src/input_pipeline.py
+
+def stock_analysis_pipeline() -> pw.Table:
+    SILVER_TOPIC = os.getenv("REDPANDA_SILVER_STOCK_TOPIC")
+    
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"stock-{int(time.time())}" if DEBUG else "stock",
+        "auto.offset.reset": "earliest",
+    }
+    
+    silver = pw.io.redpanda.read(
+        rdkafka_settings=consumer,
+        topic=SILVER_TOPIC,
+        schema=FinnHubStockSchema,
+        format="json",
+        autocommit_duration_ms=1000,
     )
     
-    # Group back
-    final = with_summary.groupby(pw.this.symbol).reduce(
+    # 5min window
+    w5 = silver.windowby(
+        pw.this.timestamp,
+        window=pw.temporal.sliding(hop=pw.Duration("5m"), duration=pw.Duration("5m")),
+        instance=pw.this.symbol
+    ).reduce(
         symbol=pw.this.symbol,
-        filing_summaries=pw.reducers.tuple(pw.this.filing_summary)
+        time=pw.this._pw_window_end,
+        m5=pw.reducers.udf_reducer(StockAccumulator)(pw.this.price, pw.this.volume)
+    )
+    
+    # 15min window
+    w15 = silver.windowby(
+        pw.this.timestamp,
+        window=pw.temporal.sliding(hop=pw.Duration("15m"), duration=pw.Duration("15m")),
+        instance=pw.this.symbol
+    ).reduce(
+        symbol=pw.this.symbol,
+        time=pw.this._pw_window_end,
+        m15=pw.reducers.udf_reducer(StockAccumulator)(pw.this.price, pw.this.volume)
+    )
+    
+    # Join
+    final = w5.join(w15, pw.left.symbol == pw.right.symbol, pw.left.time == pw.right.time).select(
+        symbol=pw.left.symbol,
+        timestamp=pw.left.time,
+        analysis_5min=pw.left.m5,
+        analysis_15min=pw.right.m15
     )
     
     return final
-
 
 
 
@@ -340,13 +397,14 @@ def filings_input_pipeline() -> pw.Table:
 
 
 if __name__ == "__main__":
-    os.makedirs("debug_output", exist_ok=True)
-    # news_table= news_input_pipeline()
-    # socials_table = social_input_pipeline()
+    output_path = "debug_output/inputs"
+    os.makedirs(output_path, exist_ok=True)
+    news_table= news_input_pipeline()
+    socials_table = social_input_pipeline()
     filings_table = filings_input_pipeline()
 
-    # pw.io.csv.write(news_table, "debug_output/news_sentiment.csv")
-    # pw.io.csv.write(socials_table, "debug_output/socials_sentiment.csv")
-    pw.io.csv.write(filings_table, "debug_output/socials_sentiment.csv")
+    pw.io.csv.write(news_table, f"{output_path}/news_sentiment.csv")
+    pw.io.csv.write(socials_table, f"{output_path}/socials_sentiment.csv")
+    pw.io.csv.write(filings_table, f"{output_path}/filings_sentiment.csv")
     # pw.io.jsonlines.write(news_table, "debug_output/news_sentiment.jsonl")
     pw.run()

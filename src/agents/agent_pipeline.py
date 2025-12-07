@@ -1,4 +1,4 @@
-from asyncio.log import logger
+import logging
 import os
 import pathway as pw
 from langgraph.graph import StateGraph, END
@@ -16,7 +16,7 @@ from datetime import datetime
 import psutil
 from src.agents.finbert import FinBertSentimentAnalyzer
 # from src.schemas.silver_schemas import FinnHubNewsSchema
- 
+
 #if ctrl+c is pressed, stop the program
 import signal
 import sys

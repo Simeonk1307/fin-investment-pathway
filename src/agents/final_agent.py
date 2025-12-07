@@ -1,7 +1,9 @@
 from src.agents.agent_state import AgentState
-import logging
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
+
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
 #final agent only output with confidence
 
@@ -47,14 +49,14 @@ def final_agent(state:AgentState) -> dict:
         """
         response=LLM.with_structured_output(AnalysisReport).invoke(FINAL_PROMPT)
 
-        logger.info(f"Final Agent Response: {response} , type  {type(response)}")
+        # logger.info(f"Final Agent Response: {response} , type  {type(response)}")
 
-        # all analysis agents
-        logger.info(f"News Analysis: {state['news_analysis']}")
-        logger.info(f"Filings Analysis: {state['filings_analysis']}")
-        logger.info(f"Market Analysis: {state['market_data']}")
-        logger.info(f"Social Analysis: {state['socials_analysis']}")
-        logger.info(state['ticker'])
+        # # all analysis agents
+        # logger.info(f"News Analysis: {state['news_analysis']}")
+        # logger.info(f"Filings Analysis: {state['filings_analysis']}")
+        # logger.info(f"Market Analysis: {state['market_data']}")
+        # logger.info(f"Social Analysis: {state['socials_analysis']}")
+        # logger.info(state['ticker'])
        
        
         if isinstance(response, AnalysisReport):
@@ -66,6 +68,9 @@ def final_agent(state:AgentState) -> dict:
 
         if not expected_keys.issubset(result_dict.keys()):
             raise ValueError("Missing keys in the response dictionary")
+        
+        logger.info(f"[AGENT PIPELINE] Final decision for {state['ticker']} received : {result_dict}")
+        
         return {
             'final_analysis': result_dict
         }

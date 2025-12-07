@@ -1,7 +1,9 @@
 from src.agents.agent_state import AgentState
-import logging
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
+
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
 class SocialsAnalysisResult(BaseModel):
     prediction: str = Field(..., description="Stock price movement prediction: UP, DOWN, or NEUTRAL")
@@ -50,6 +52,8 @@ def socials_agent(state:AgentState) -> dict:
 
         if not expected_keys.issubset(result_dict.keys()):
             raise ValueError("Missing keys in the response dictionary")
+        
+        logger.info(f"[AGENT PIPELINE] Social analysis received : {result_dict}")
         
         # if not expected_keys.issubset(result_dict.keys()):
         #     raise ValueError("Missing keys in the response dictionary")

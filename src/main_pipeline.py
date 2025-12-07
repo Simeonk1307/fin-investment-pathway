@@ -30,7 +30,11 @@ def process_ticker(ticker: str,
                    socials_articles: tuple[str], socials_sentiment_scores: tuple[float],
                    filings_summary:tuple[str]):
 
-    logger.info("inside")
+    logger.info(f"[Main pipeline] Started agent graph for {ticker}")
+    logger.info(f"[Main pipeline] News Sentiment scores : {news_sentiment_scores}")
+    logger.info(f"[Main pipeline] Social Sentiment scores : {socials_sentiment_scores}")
+    logger.info(f"[Main pipeline] No of articles : {len(news_articles)}")
+    logger.info(f"[Main pipeline] No of articles : {len(socials_articles)}")
     graph = create_graph()
     state = {
         "LLM" : LLM,
@@ -115,11 +119,15 @@ def run_agent_pipeline(
         socials_articles=pw.this.socials_articles,
         socials_sentiment_scores=pw.this.socials_sentiment_scores,
     )
-
-    analysed_filings = filings_table.select(
+    analysed_filings=filings_table.select(
         symbol=pw.this.symbol,
-        filings_summary=pw.this.filings_summary,
+        filing_summary=pw.this.filing_summary
     )
+
+    # analysed_filings = filings_table.select(
+    #     symbol=pw.this.symbol,
+    #     filings_summary=pw.this.filings_summary,
+    # )
 
     logger.info(f"[SOCIALS] Sentiment analysis done")
 
@@ -137,7 +145,7 @@ def run_agent_pipeline(
             pw.this.news_sentiment_scores,
             pw.this.socials_articles,
             pw.this.socials_sentiment_scores,
-            pw.this.filings_summary)
+            pw.this.filing_summary)
     )
     
     # Process through LangGraph

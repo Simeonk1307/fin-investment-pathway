@@ -11,6 +11,9 @@ from langchain_groq import ChatGroq
 
 LLMProvider = Literal["openai", "perplexity", "groq"]
 
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
 class SafetyLLM:
     """Safeguard LLM instance using Perplexity"""
@@ -102,6 +105,7 @@ def get_llm(
         llm = get_llm("openai", model="gpt-4")
         llm = get_llm("perplexity", model="sonar")
     """
+    logger.info(f"[AGENT PIPELINE] Initializing : {provider} LLM")
     return init_LLM(provider, model, temperature, **kwargs).get_model()
 
 
