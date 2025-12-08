@@ -1,6 +1,3 @@
-
-
-
 import pathway as pw
 from src.schemas.silver_schemas import FinnHubStockSchema
 from src.schemas.bronze_schemas import UnifiedSchema
