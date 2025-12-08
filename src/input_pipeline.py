@@ -6,6 +6,10 @@ import signal
 import logging
 import pathway as pw
 from dotenv import load_dotenv
+from src.schemas.silver_schemas import FinnHubNewsSchema, FinnHubStockSchema
+from src.utils.common import common_config, profiles
+from src.agents.finbert import FinBertSentimentAnalyzer
+from src.agents.lstm_model.pathway_udf import predict_and_signal
 from src.schemas.silver_schemas import FinnHubNewsSchema, SocialsSchema, FinnhubFilingsSchema, FinnHubStockSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
@@ -132,31 +136,6 @@ def merge_texts(title: str, content: str) -> str:
 def get_sentiment_score(title: str, content: str) -> list[float]:
     return _get_sentiment_score(title, content)
 
-@pw.udf
-def get_weight_timestamp(timestamp: int) -> float:
-    """
-    Calculate weight for stock news with appropriate decay.
-    For stocks, use 10-day half-life (news from 10 days ago = 50% weight)
-    Args:
-        timestamp: Unix timestamp (e.g., 1734453535)
-    Returns:
-        Weight between 0.0001 and 1.0
-    """
-    
-    current_time = time.time()
-    age_seconds = current_time - timestamp
-    age_days = age_seconds / 86400  # Convert seconds to days
-    # logger.info(f"Calculating weight for timestamp {timestamp}, age in days: {age_days}")
-    # Day 0 (today): weight = 1.0
-    # Day 10: weight = 0.5
-    # Day 30: weight = 0.125
-
-    half_life_days = 10.0
-    weight = 2 ** (-age_days / half_life_days)
-    # logger.info(f"Calculated weight: {weight} for age in days: {age_days}")
-    # time.sleep(3)
-    
-    return max(weight, 0.0001)  # Minimum weight
 
 def news_input_pipeline()->pw.Table:
     TEMP = "NEWS"
@@ -188,7 +167,6 @@ def news_input_pipeline()->pw.Table:
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
         sentiment=get_sentiment_score(pw.this.title, pw.this.content),
-        weight=get_weight_timestamp(pw.this.timestamp)
     )
 
     logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
@@ -389,6 +367,69 @@ def stock_analysis_pipeline() -> pw.Table:
     
     return final
 
+
+
+def stock_signal_pipeline() -> pw.Table:
+    """Read stock updates from a Silver stock topic, run predict_and_signal UDF,
+    and write results to CSV. Returns the Pathway table of results.
+    """
+    suffix = f"-{int(time.time())}" if DEBUG else ""
+    consumer = common_config | KAFKA_RESILIENCE | {
+        "group.id": f"lstm-signals-stocks{suffix}",
+        "auto.offset.reset": "earliest",
+    }
+
+    STOCK_TOPIC = os.getenv("REDPANDA_SILVER_STOCK_TOPIC")
+    if STOCK_TOPIC is None:
+        logger.warning("REDPANDA_SILVER_STOCK_TOPIC not set - stock_signal_pipeline will not run.")
+        return None
+
+    logger.info(f"[LSTM:STOCKS] Reading from {STOCK_TOPIC}")
+
+    stocks = pw.io.redpanda.read(
+        rdkafka_settings=consumer,
+        topic=STOCK_TOPIC,
+        schema=FinnHubStockSchema,
+        format="json",
+        autocommit_duration_ms=1000,
+    )
+
+    # Call the UDF; supply defaults for missing indicators
+    predictions = stocks.select(
+        symbol=pw.this.symbol,
+        result=predict_and_signal(
+            pw.this.symbol,
+            pw.this.price,
+            pw.this.volume,
+            0.0,  # Return not provided in silver stock schema
+            0.0,0.0,0.0,0.0,0.0,  # SMA_5..SMA_50
+            0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+        )
+    )
+
+    # Extract JSON values
+    @pw.udf
+    def get_key(data: pw.Json, key: str, default=None):
+        try:
+            return data.get(key, default)
+        except Exception:
+            return default
+
+    results = predictions.select(
+        symbol=pw.this.symbol,
+        predicted_price=get_key(pw.this.result, 'predicted_price', 0.0),
+        current_price=get_key(pw.this.result, 'current_price', 0.0),
+        signal=get_key(pw.this.result, 'signal', 'hold'),
+        reason=get_key(pw.this.result, 'reason', ''),
+        confidence=get_key(pw.this.result, 'confidence', 0.0),
+        rmse=get_key(pw.this.result, 'rmse', 0.0),
+    )
+
+    out_dir = "outputs/lstm/signals"
+    os.makedirs(out_dir, exist_ok=True)
+    pw.io.csv.write(results, f"{out_dir}/signals.csv")
+
+    return results
 
 
 

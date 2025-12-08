@@ -168,8 +168,12 @@ def run_main_pipeline():
     print("[MAIN PIPELINE] Starting...", flush=True)
 
     news_table = news_input_pipeline()
-    socials_table = social_input_pipeline()
-    filings_table = filings_input_pipeline()
+    social_table = social_input_pipeline()
+    # Optional: create stock signal pipeline (will be a no-op if env var not set)
+    try:
+        stock_table = stock_signal_pipeline()
+    except Exception:
+        stock_table = None
 
     run_agent_pipeline(
         news_table=news_table,
