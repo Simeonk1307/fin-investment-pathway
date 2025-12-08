@@ -134,7 +134,7 @@ def create_pipeline():
         "auto.offset.reset": "earliest",
     }
     
-    producer = common_config | KAFKA_RESILIENCE | profiles["high_throughput"]
+    producer = common_config | KAFKA_RESILIENCE | profiles["low_latency"]
 
     print(f"[GOLD:FILINGS] Input: {SILVER_TOPIC}", flush=True)
     print(f"[GOLD:FILINGS] Output: {GOLD_TOPIC}", flush=True)

@@ -155,7 +155,7 @@ def main():
 
     producer_config = (
         common_config
-        | profiles["high_throughput"]
+        | profiles["low_latency"]
         | {"client.id": producer_id}
         | {"log_level": "0"}
     )

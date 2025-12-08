@@ -202,7 +202,7 @@ def main():
 
     producer_config = (
         common_config
-        | profiles["high_throughput"]
+        | profiles["low_latency"]
         | {"client.id": f"finnhub-news-{uuid.uuid4().hex[:6]}"}
         | {"log_level": 0}
     )

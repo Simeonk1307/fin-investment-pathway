@@ -125,7 +125,7 @@ def create_silver_pipeline(
         "auto.commit.interval.ms": "500",
     }
     
-    producer = common_config | KAFKA_RESILIENCE | extra | profiles["high_throughput"] | {
+    producer = common_config | KAFKA_RESILIENCE | extra | profiles["low_latency"] | {
         "client.id": f"silver-{name.lower()}-producer"
     }
 

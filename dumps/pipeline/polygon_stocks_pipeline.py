@@ -22,7 +22,7 @@ if not api_key:
 tickers = json.loads(os.getenv("TICKERS"))
 logger = get_module_logger("POLYGONStocksProducer")
 topic = os.getenv("REDPANDA_BRONZE_STOCKS_TOPIC") 
-producer_config = common_config | profiles["high_throughput"] | {"client.id": "polygon-stocks-producer"}
+producer_config = common_config | profiles["low_latency"] | {"client.id": "polygon-stocks-producer"}
 
 
 logger.info("=" * 60)

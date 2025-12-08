@@ -12,7 +12,7 @@ pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 tickers = json.loads(os.getenv("TICKERS"))
 logger = get_module_logger("YFinanceProducer")
 topic=os.getenv("REDPANDA_BRONZE_STOCKS_TOPIC")
-producer_config = common_config | profiles["high_throughput"] | {"client.id": "yfinance-stocks-producer"}
+producer_config = common_config | profiles["low_latency"] | {"client.id": "yfinance-stocks-producer"}
 
 producer = YFinanceStocksProducer(
     tickers=tickers,
