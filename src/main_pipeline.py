@@ -1,4 +1,4 @@
-from src.input_pipeline import news_input_pipeline,social_input_pipeline, filings_input_pipeline
+from src.input_pipeline import news_input_pipeline,social_input_pipeline, filings_input_pipeline, stock_signal_pipeline
 import pathway as pw
 from src.agents.agent_pipeline import  create_graph
 from src.agents.llm_factory import get_llm
@@ -96,9 +96,7 @@ def run_agent_pipeline(
     news_table: pw.Table,
     socials_table: pw.Table,
     filings_table: pw.Table,
-    # market_table: pw.Table = None, 
-    # fundamentals_table: pw.Table = None, 
-    # sentiment_table: pw.Table = None, 
+    stocks_table: pw.Table,
     output_path: str = "outputs/"
 ):
     @pw.udf
@@ -123,11 +121,6 @@ def run_agent_pipeline(
         symbol=pw.this.symbol,
         filing_summary=pw.this.filing_summary
     )
-
-    # analysed_filings = filings_table.select(
-    #     symbol=pw.this.symbol,
-    #     filings_summary=pw.this.filings_summary,
-    # )
 
     logger.info(f"[SOCIALS] Sentiment analysis done")
 
@@ -168,7 +161,8 @@ def run_main_pipeline():
     print("[MAIN PIPELINE] Starting...", flush=True)
 
     news_table = news_input_pipeline()
-    social_table = social_input_pipeline()
+    socials_table = social_input_pipeline()
+    filings_table = filings_input_pipeline()
     # Optional: create stock signal pipeline (will be a no-op if env var not set)
     try:
         stock_table = stock_signal_pipeline()
@@ -179,9 +173,7 @@ def run_main_pipeline():
         news_table=news_table,
         socials_table=socials_table,
         filings_table=filings_table,
-        # market_table=market_table,
-        # fundamentals_table=fundamentals_table,
-        # sentiment_table=sentiment_table,
+        stocks_table=stock_table,
         output_path="debug_output/agents/"
     )
     pw.run()

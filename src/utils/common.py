@@ -35,7 +35,7 @@ profiles = {
         "delivery.timeout.ms": "10000",
         "socket.timeout.ms": "10000",
     },
-    "high_throughput": {
+    "   hput": {
         "acks": "1",
         "linger.ms": "100",
         "batch.num.messages": "10000",

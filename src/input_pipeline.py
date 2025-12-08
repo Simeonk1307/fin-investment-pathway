@@ -317,56 +317,6 @@ def filings_input_pipeline() -> pw.Table:
     
     return with_summary
 
-# src/input_pipeline.py
-
-def stock_analysis_pipeline() -> pw.Table:
-    SILVER_TOPIC = os.getenv("REDPANDA_SILVER_STOCK_TOPIC")
-    
-    consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"stock-{int(time.time())}" if DEBUG else "stock",
-        "auto.offset.reset": "earliest",
-    }
-    
-    silver = pw.io.redpanda.read(
-        rdkafka_settings=consumer,
-        topic=SILVER_TOPIC,
-        schema=FinnHubStockSchema,
-        format="json",
-        autocommit_duration_ms=1000,
-    )
-    
-    # 5min window
-    w5 = silver.windowby(
-        pw.this.timestamp,
-        window=pw.temporal.sliding(hop=pw.Duration("5m"), duration=pw.Duration("5m")),
-        instance=pw.this.symbol
-    ).reduce(
-        symbol=pw.this.symbol,
-        time=pw.this._pw_window_end,
-        m5=pw.reducers.udf_reducer(StockAccumulator)(pw.this.price, pw.this.volume)
-    )
-    
-    # 15min window
-    w15 = silver.windowby(
-        pw.this.timestamp,
-        window=pw.temporal.sliding(hop=pw.Duration("15m"), duration=pw.Duration("15m")),
-        instance=pw.this.symbol
-    ).reduce(
-        symbol=pw.this.symbol,
-        time=pw.this._pw_window_end,
-        m15=pw.reducers.udf_reducer(StockAccumulator)(pw.this.price, pw.this.volume)
-    )
-    
-    # Join
-    final = w5.join(w15, pw.left.symbol == pw.right.symbol, pw.left.time == pw.right.time).select(
-        symbol=pw.left.symbol,
-        timestamp=pw.left.time,
-        analysis_5min=pw.left.m5,
-        analysis_15min=pw.right.m15
-    )
-    
-    return final
-
 
 
 def stock_signal_pipeline() -> pw.Table:
@@ -430,11 +380,6 @@ def stock_signal_pipeline() -> pw.Table:
     pw.io.csv.write(results, f"{out_dir}/signals.csv")
 
     return results
-
-
-
-# def input_pipeline() -> list[pw.Table]: 
-#     return [news_input_pipeline(), social_input_pipeline()]
 
 
 if __name__ == "__main__":

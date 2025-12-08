@@ -20,7 +20,7 @@ class MinioStorage:
     def _init_client(self):
         self.client = Minio(
             os.getenv("MINIO_ENDPOINT", "localhost:9000"),
-            access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+            access_key=os.getenv("MINIO_ACCESS_KEY", "minio"),
             secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
             secure=False,
         )

@@ -56,7 +56,7 @@ python main.py --action update --news-file article.txt --use-llm
 from kg_queries import KGQueryService
 from neo4j import GraphDatabase
 
-driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "password"))
+driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "neo4jadmin"))
 query_service = KGQueryService(driver)
 
 # Get CEOs and board members

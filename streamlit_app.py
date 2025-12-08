@@ -11,12 +11,6 @@ else:
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
-import warnings
-warnings.filterwarnings(
-    "ignore",
-    message=".*missing ScriptRunContext.*"
-)
-
 import streamlit as st
 import pandas as pd
 import time

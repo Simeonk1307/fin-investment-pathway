@@ -84,20 +84,3 @@ def predict_and_signal(
     }
 
     return out
-
-
-# Example: how to use inside a Pathway pipeline (conceptual)
-#
-# import pathway as pw
-# from src.agents.lstm_model.pathway_udf import predict_and_signal
-#
-# stocks_table = pw.io.redpanda.read(..., schema=StockSchema)
-# results = stocks_table.select(
-#     ticker=pw.this.ticker,
-#     prediction=predict_and_signal(
-#         pw.this.ticker, pw.this.Close, pw.this.Volume, pw.this.Return,
-#         pw.this.SMA_5, pw.this.SMA_10, pw.this.SMA_20, pw.this.SMA_30, pw.this.SMA_50,
-#         pw.this.RSI, pw.this.MACD, pw.this.MACD_Signal, pw.this.BB_Middle,
-#         pw.this.BB_Upper, pw.this.BB_Lower, pw.this.Momentum, pw.this.Momentum5, pw.this.Volume_Ratio
-#     )
-# )

@@ -31,8 +31,6 @@ services:
       - --default-log-level=info
     networks:
       - redpanda_network
-    environment:
-      RP_BOOTSTRAP_USER: "superuser:secretpassword"
     volumes:
       - redpanda-0:/var/lib/redpanda/data
       - ./bootstrap.yml:/etc/redpanda/.bootstrap.yaml
@@ -63,8 +61,6 @@ services:
       - --seeds redpanda-0:33145
     networks:
       - redpanda_network
-    environment:
-      RP_BOOTSTRAP_USER: "superuser:secretpassword"
     volumes:
       - redpanda-1:/var/lib/redpanda/data
     ports:
@@ -94,8 +90,6 @@ services:
       - --seeds redpanda-0:33145
     networks:
       - redpanda_network
-    environment:
-      RP_BOOTSTRAP_USER: "superuser:secretpassword"
     volumes:
       - redpanda-2:/var/lib/redpanda/data
     ports:
@@ -121,8 +115,7 @@ services:
       KAFKA_BROKERS: redpanda-0:9092,redpanda-1:9092,redpanda-2:9092
       KAFKA_SCHEMAREGISTRY_ENABLED: "true"
       KAFKA_SCHEMAREGISTRY_URLS: http://redpanda-0:8081
-      REDPANDA_ADMINAPI_ENABLED: "true"
-      REDPANDA_ADMINAPI_URLS: http://redpanda-0:9644
+      REDPANDA_ADMINAPI_ENABLED: "false"
     depends_on:
       redpanda-0:
         condition: service_healthy
@@ -133,7 +126,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: redpandaTieredStorage7
+      MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio:/data
     networks:
@@ -175,7 +168,7 @@ services:
         condition: service_healthy
 
   neo4j:
-    image: neo4j:5.25.1
+    image: neo4j
     container_name: neo4j
     networks:
       - redpanda_network
@@ -184,7 +177,7 @@ services:
       - neo4j_logs:/logs
       - neo4j_plugins:/plugins
     environment:
-      NEO4J_AUTH: "neo4j/password123"
+      NEO4J_AUTH: "none"
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
       NEO4J_apoc_export_file_enabled: "true"
       NEO4J_apoc_import_file_enabled: "true"

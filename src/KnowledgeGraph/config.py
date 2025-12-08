@@ -9,7 +9,7 @@ class Neo4jConfig:
     """Neo4j database configuration"""
     uri: str = "bolt://localhost:7687"
     username: str = "neo4j"
-    password: str = "neo4j-For-Everyone@123"
+    password: str = "neo4jadmin"
     database: str = "neo4j"
 
 @dataclass

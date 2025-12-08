@@ -19,7 +19,7 @@ pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 neo4j_config = Neo4jConfig(
     uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
     user=os.getenv("NEO4J_USER", "neo4j"),
-    password=os.getenv("NEO4J_PASSWORD", "password"),
+    password=os.getenv("NEO4J_PASSWORD", "neo4jadmin"),
 )
 
 try:
