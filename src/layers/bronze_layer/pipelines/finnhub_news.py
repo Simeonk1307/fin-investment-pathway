@@ -8,7 +8,7 @@ import logging
 import pathway as pw
 import finnhub
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from datetime import datetime
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient
@@ -19,7 +19,7 @@ from src.utils.common import common_config, profiles
 from src.observability.helping import OTELLoggerManager, OTELMetricsManager
 
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 logging.basicConfig(
     level=logging.INFO,
@@ -171,9 +171,9 @@ def main():
         "TICKERS",
         "REDPANDA_BROKERS",
         "REDPANDA_SECURITY_PROTOCOL",
-        # "REDPANDA_SASL_MECHANISM",
-        # "REDPANDA_USERNAME",
-        # "REDPANDA_PASSWORD"
+        "REDPANDA_SASL_MECHANISM",
+        "REDPANDA_USERNAME",
+        "REDPANDA_PASSWORD"
     ]
 
     missing = [v for v in required if not os.getenv(v)]

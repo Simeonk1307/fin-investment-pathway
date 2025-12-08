@@ -1,6 +1,6 @@
 import os
 import json
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import pathway as pw
 from src.schemas.bronze_schemas import BronzeSchema
 from src.config.logger_config import get_module_logger
@@ -10,7 +10,7 @@ from src.layers.bronze_layer.collectors.polygon_stocks import PolygonSubject
 
 # DID NOT IMPLEMENT THIS BECAUSE OF PRICING OF THE API
 
-load_dotenv()
+load_dotenv(find_dotenv())
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
 

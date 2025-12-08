@@ -14,8 +14,8 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler
 
-from dotenv import load_dotenv
-load_dotenv()
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv)
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 torch.manual_seed(42)

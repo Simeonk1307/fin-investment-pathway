@@ -1,43 +1,61 @@
 #!/bin/bash
+set -e
 
-BROKER="redpanda-0:9092"
+echo "=========================================="
+echo "Creating Redpanda Topics"
+echo "=========================================="
 
-echo "⏳ Waiting for cluster..."
-until [ $(rpk cluster info --brokers $BROKER 2>/dev/null | grep -c "redpanda-") -ge 3 ]; do
-  sleep 5
-done
-sleep 10
+AUTH_ARGS=""
+if [ "$RP_ENABLE_SASL" = "true" ]; then
+  AUTH_ARGS="--user ${RP_SUPERUSER} --password ${RP_SUPERPASS} --sasl-mechanism ${RP_SASL_MECHANISM}"
+  echo "Using SASL authentication"
+else
+  echo "Using no authentication"
+fi
 
-echo "✅ Creating topics..."
-
-TOPICS=(
-  "bronze.news:6:3:cleanup.policy=delete,retention.ms=604800000"
-  "bronze.socials:6:3:cleanup.policy=delete,retention.ms=604800000"
-  "bronze.stocks:6:3:cleanup.policy=delete,retention.ms=604800000"
-  "bronze.filings:6:3:cleanup.policy=delete,retention.ms=604800000"
-  "silver.news:6:3:cleanup.policy=compact"
-  "silver.socials:6:3:cleanup.policy=compact"
-  "silver.stocks:6:3:cleanup.policy=compact"
-  "silver.filings:6:3:cleanup.policy=compact"
-  "silver.dlq.news:3:3:cleanup.policy=delete,retention.ms=1209600000"
-  "silver.dlq.socials:3:3:cleanup.policy=delete,retention.ms=1209600000"
-  "silver.dlq.stocks:3:3:cleanup.policy=delete,retention.ms=1209600000"
-  "silver.dlq.filings:3:3:cleanup.policy=delete,retention.ms=1209600000"
-)
-
-for entry in "${TOPICS[@]}"; do
-  IFS=':' read -r name partitions replicas config <<< "$entry"
+create_topic() {
+  local topic=$1
+  local partitions=${2:-3}
+  local replicas=${3:-3}
+  local retention=${4:-604800000}
   
-  for attempt in 1 2 3; do
-    if rpk topic create "$name" --brokers $BROKER -p $partitions -r $replicas --topic-config ${config//,/ --topic-config } 2>&1 | grep -q "OK\|exists"; then
-      echo "✓ $name"
-      break
-    fi
-    echo "  Retry $attempt for $name..."
-    sleep 2
-  done
-done
+  echo "Creating topic: $topic (partitions=$partitions, replicas=$replicas)"
+  
+  rpk topic create "$topic" \
+    --brokers ${RP_BROKERS} \
+    --partitions $partitions \
+    --replicas $replicas \
+    --topic-config retention.ms=$retention \
+    --topic-config compression.type=snappy \
+    $AUTH_ARGS || echo "Topic '$topic' already exists"
+}
 
 echo ""
-echo "📋 Topics:"
-rpk topic list --brokers $BROKER
+echo "Creating Bronze Layer Topics..."
+create_topic "bronze.stocks" 3 3 604800000
+create_topic "bronze.socials" 3 3 604800000
+create_topic "bronze.news" 3 3 604800000
+create_topic "bronze.filings" 3 3 604800000
+
+echo ""
+echo "Creating Silver Layer Topics..."
+create_topic "silver.stocks" 3 3 2592000000
+create_topic "silver.socials" 3 3 2592000000
+create_topic "silver.news" 3 3 2592000000
+create_topic "silver.filings" 3 3 2592000000
+
+echo ""
+echo "Creating Dead Letter Queue Topics..."
+create_topic "silver.dlq.stocks" 1 3 2592000000
+create_topic "silver.dlq.news" 1 3 2592000000
+create_topic "silver.dlq.socials" 1 3 2592000000
+create_topic "silver.dlq.filings" 1 3 2592000000
+
+echo ""
+echo "Listing all topics..."
+rpk topic list --brokers ${RP_BROKERS} $AUTH_ARGS
+
+echo ""
+echo "=========================================="
+echo "Topics Created Successfully!"
+echo "=========================================="

@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 import yaml
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml

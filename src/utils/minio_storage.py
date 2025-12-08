@@ -1,10 +1,10 @@
 import os
 from minio import Minio
 import io
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import logging
 
-load_dotenv()
+load_dotenv(find_dotenv())
 logger = logging.getLogger(__name__)
 
 
@@ -19,12 +19,12 @@ class MinioStorage:
 
     def _init_client(self):
         self.client = Minio(
-            os.getenv("MINIO_ENDPOINT", "localhost:9000"),
-            access_key=os.getenv("MINIO_ACCESS_KEY", "minio"),
-            secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+            os.getenv("MINIO_ENDPOINT"),
+            access_key=os.getenv("MINIO_ACCESS_KEY"),
+            secret_key=os.getenv("MINIO_SECRET_KEY"),
             secure=False,
         )
-        self.bucket = os.getenv("MINIO_BUCKET", "filings")
+        self.bucket = os.getenv("MINIO_BUCKET")
 
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)

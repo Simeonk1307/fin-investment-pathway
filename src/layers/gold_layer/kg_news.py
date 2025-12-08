@@ -3,13 +3,13 @@ import sys
 import logging
 import time
 import pathway as pw
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 from src.schemas.silver_schemas import FinnHubNewsSchema
 from src.utils.common import common_config, profiles
 from src.KnowledgeGraph.kg_news_updater import KGNewsUpdater, Neo4jConfig
 
-load_dotenv()
+load_dotenv(find_dotenv)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
 neo4j_config = Neo4jConfig(
-    uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-    user=os.getenv("NEO4J_USER", "neo4j"),
-    password=os.getenv("NEO4J_PASSWORD", "neo4jadmin"),
+    uri=os.getenv("NEO4J_URI"),
+    user=os.getenv("NEO4J_USERNAME"),
+    password=os.getenv("NEO4J_PASSWORD"),
 )
 
 try:

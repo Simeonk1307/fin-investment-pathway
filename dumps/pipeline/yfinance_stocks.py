@@ -1,12 +1,12 @@
 import os, json
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from src.config.logger_config import get_module_logger
 from src.layers.bronze_layer.collectors.yfinance_stocks import YFinanceStocksProducer
 from src.utils.common import common_config, profiles
 import pathway as pw
 
 # Extend this to settings in src.config.settings import Config
-load_dotenv()
+load_dotenv(find_dotenv)()
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
 tickers = json.loads(os.getenv("TICKERS"))

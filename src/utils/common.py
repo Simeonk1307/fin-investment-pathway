@@ -1,14 +1,14 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 common_config = {
     "bootstrap.servers": os.getenv("REDPANDA_BROKERS"),
     "security.protocol": os.getenv("REDPANDA_SECURITY_PROTOCOL"),
-    # "sasl.mechanism": os.getenv("REDPANDA_SASL_MECHANISM"),
-    # "sasl.username": os.getenv("REDPANDA_USERNAME"),
-    # "sasl.password": os.getenv("REDPANDA_PASSWORD"),
+    "sasl.mechanism": os.getenv("REDPANDA_SASL_MECHANISM"),
+    "sasl.username": os.getenv("REDPANDA_USERNAME"),
+    "sasl.password": os.getenv("REDPANDA_PASSWORD"),
     "log_level": "0",
 }
 

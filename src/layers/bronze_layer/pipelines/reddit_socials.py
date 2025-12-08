@@ -6,7 +6,7 @@ import uuid
 import signal
 import logging
 from datetime import datetime
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient
@@ -139,7 +139,7 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-    load_dotenv()
+    load_dotenv(find_dotenv())
     validate_env(logger)
 
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"

@@ -3,12 +3,12 @@ import pathway as pw
 from src.agents.agent_pipeline import  create_graph
 from src.agents.llm_factory import get_llm
 from langchain_core.messages import HumanMessage
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import signal
 import os
 import logging
 
-load_dotenv()
+load_dotenv(find_dotenv)
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 def shutdown_handler(signum, frame):

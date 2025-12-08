@@ -2,9 +2,9 @@ import time
 from src.layers.bronze_layer.collectors.reddit_socials import send_to_kafka
 from src.layers.bronze_layer.collectors.tavily_news import scrape_tavily_web
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv)()
 
 EQUITY_TICKERS = ["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","TSLA"]
 

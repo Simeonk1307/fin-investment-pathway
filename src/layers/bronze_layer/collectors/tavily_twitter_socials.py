@@ -1,9 +1,9 @@
 from tavily import TavilyClient
 import time
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 

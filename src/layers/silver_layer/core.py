@@ -3,7 +3,7 @@ import time
 import logging
 import threading
 import pathway as pw
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from src.schemas.bronze_schemas import UnifiedSchema
 from src.utils.common import common_config, profiles
 from src.layers.silver_layer.clean_text import clean_text
@@ -16,7 +16,7 @@ from src.utils.casting import (
 )
 from src.observability.helping import OTELLoggerManager, OTELMetricsManager
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(

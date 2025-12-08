@@ -1,10 +1,10 @@
 import pathway as pw
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from src.schemas.silver_schemas import FinnHubEquitySchema
 from src.utils.reducers import stddev
 
-load_dotenv()
+load_dotenv(find_dotenv)
 pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))
 
 consumer_settings = {

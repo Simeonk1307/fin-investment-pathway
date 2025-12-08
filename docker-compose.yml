@@ -1,4 +1,5 @@
 name: redpanda-cluster
+
 networks:
   redpanda_network:
     driver: bridge
@@ -13,97 +14,201 @@ volumes:
   neo4j_plugins:
 
 services:
+  # Main Redpanda broker
   redpanda-0:
     image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
     container_name: redpanda-0
     command:
       - redpanda
       - start
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr internal://redpanda-0:9092,external://localhost:19092
-      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
-      - --advertise-pandaproxy-addr internal://redpanda-0:8082,external://localhost:18082
-      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
-      - --rpc-addr redpanda-0:33145
-      - --advertise-rpc-addr redpanda-0:33145
-      - --mode dev-container
-      - --smp 1
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda-0:9092,external://localhost:19092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda-0:8082,external://localhost:18082
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr
+      - redpanda-0:33145
+      - --advertise-rpc-addr
+      - redpanda-0:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
       - --default-log-level=info
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.superusers=["${RP_SUPERUSER}"]
     networks:
       - redpanda_network
     volumes:
       - redpanda-0:/var/lib/redpanda/data
-      - ./bootstrap.yml:/etc/redpanda/.bootstrap.yaml
     ports:
-      - 18081:18081
-      - 18082:18082
-      - 19092:19092
-      - 19644:9644
+      - "18081:18081"
+      - "18082:18082"
+      - "19092:19092"
+      - "19644:9644"
+    environment:
+      RP_BOOTSTRAP_USER: ${RP_SUPERUSER}
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 45s
 
+  # Second Redpanda broker
   redpanda-1:
     image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
     container_name: redpanda-1
     command:
       - redpanda
       - start
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:29092
-      - --advertise-kafka-addr internal://redpanda-1:9092,external://localhost:29092
-      - --rpc-addr redpanda-1:33145
-      - --advertise-rpc-addr redpanda-1:33145
-      - --mode dev-container
-      - --smp 1
-      - --seeds redpanda-0:33145
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:29092
+      - --advertise-kafka-addr
+      - internal://redpanda-1:9092,external://localhost:29092
+      - --seeds
+      - redpanda-0:33145
+      - --rpc-addr
+      - redpanda-1:33145
+      - --advertise-rpc-addr
+      - redpanda-1:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.superusers=["${RP_SUPERUSER}"]
     networks:
       - redpanda_network
     volumes:
       - redpanda-1:/var/lib/redpanda/data
     ports:
-      - 29092:29092
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      - "29092:29092"
+    environment:
+      RP_BOOTSTRAP_USER: ${RP_SUPERUSER}
     depends_on:
       redpanda-0:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
 
+  # Third Redpanda broker
   redpanda-2:
     image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
     container_name: redpanda-2
     command:
       - redpanda
       - start
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:39092
-      - --advertise-kafka-addr internal://redpanda-2:9092,external://localhost:39092
-      - --rpc-addr redpanda-2:33145
-      - --advertise-rpc-addr redpanda-2:33145
-      - --mode dev-container
-      - --smp 1
-      - --seeds redpanda-0:33145
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:39092
+      - --advertise-kafka-addr
+      - internal://redpanda-2:9092,external://localhost:39092
+      - --seeds
+      - redpanda-0:33145
+      - --rpc-addr
+      - redpanda-2:33145
+      - --advertise-rpc-addr
+      - redpanda-2:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.superusers=["${RP_SUPERUSER}"]
     networks:
       - redpanda_network
     volumes:
       - redpanda-2:/var/lib/redpanda/data
     ports:
-      - 39092:39092
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      - "39092:39092"
+    environment:
+      RP_BOOTSTRAP_USER: ${RP_SUPERUSER}
     depends_on:
       redpanda-0:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
 
+  # SASL initialization - runs FIRST
+  sasl_init:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
+    container_name: redpanda-sasl-init
+    user: root
+    networks:
+      - redpanda_network
+    depends_on:
+      redpanda-0:
+        condition: service_healthy
+      redpanda-1:
+        condition: service_healthy
+      redpanda-2:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/scripts
+    environment:
+      RP_SUPERUSER: ${RP_SUPERUSER}
+      RP_SUPERPASS: ${RP_SUPERPASS}
+      RP_ENABLE_SASL: ${RP_ENABLE_SASL}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        chmod +x /scripts/bootstrap_sasl.sh
+        echo "Starting SASL initialization..."
+        /scripts/bootstrap_sasl.sh
+        echo "SASL initialization completed!"
+
+  # Topic initialization - runs AFTER SASL
+  topic-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
+    container_name: redpanda-topic-init
+    user: root
+    networks:
+      - redpanda_network
+    depends_on:
+      sasl_init:
+        condition: service_completed_successfully
+    volumes:
+      - ./scripts:/scripts
+    environment:
+      RP_BROKERS: redpanda-0:9092,redpanda-1:9092,redpanda-2:9092
+      RP_SUPERUSER: ${RP_SUPERUSER}
+      RP_SUPERPASS: ${RP_SUPERPASS}
+      RP_ENABLE_SASL: ${RP_ENABLE_SASL}
+      RP_SASL_MECHANISM: ${RP_SASL_MECHANISM}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        chmod +x /scripts/create_topics.sh
+        echo "Waiting for SASL to be ready..."
+        sleep 5
+        echo "Creating topics..."
+        /scripts/create_topics.sh
+        echo "Topics created successfully!"
+
+  # Redpanda Console - starts AFTER topics
   console:
     container_name: redpanda-console
     image: docker.redpanda.com/redpandadata/console:v3.3.2
@@ -115,43 +220,74 @@ services:
       KAFKA_BROKERS: redpanda-0:9092,redpanda-1:9092,redpanda-2:9092
       KAFKA_SCHEMAREGISTRY_ENABLED: "true"
       KAFKA_SCHEMAREGISTRY_URLS: http://redpanda-0:8081
-      REDPANDA_ADMINAPI_ENABLED: "false"
+      REDPANDA_ADMINAPI_ENABLED: "true"
+      REDPANDA_ADMINAPI_URLS: http://redpanda-0:9644
+      KAFKA_SASL_ENABLED: ${CONSOLE_SASL_ENABLED}
+      KAFKA_SASL_MECHANISM: ${RP_SASL_MECHANISM}
+      KAFKA_SASL_USERNAME: ${RP_SUPERUSER}
+      KAFKA_SASL_PASSWORD: ${RP_SUPERPASS}
     depends_on:
-      redpanda-0:
-        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/cluster"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Minio storage
   minio:
     container_name: minio
     image: minio/minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - minio:/data
     networks:
       - redpanda_network
     ports:
-      - 9000:9000
-      - 9001:9001
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  topic-init:
-    image: docker.redpanda.com/redpandadata/redpanda:v25.3.1
-    container_name: redpanda-topic-init
-    user: root
-    depends_on:
-      redpanda-0:
-        condition: service_healthy
-      redpanda-1:
-        condition: service_healthy
-      redpanda-2:
-        condition: service_healthy
+
+  # Neo4j database
+  neo4j:
+    image: neo4j:latest
+    container_name: neo4j
     networks:
       - redpanda_network
     volumes:
-      - ./scripts:/scripts
-    entrypoint: ["/bin/bash", "-c", "chmod +x /scripts/create_topics.sh && sleep 5 && /scripts/create_topics.sh"]
-
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    environment:
+      NEO4J_AUTH: ${NEO4J_USERNAME}/${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_server_memory_pagecache_size: 512M
+      NEO4J_server_memory_heap_initial__size: 512M
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*,gds.*"
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USERNAME}", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    
+  # Observability stack
   lgtm:
     container_name: lgtm
     image: grafana/otel-lgtm:latest
@@ -161,29 +297,118 @@ services:
       - "3000:3000"
       - "4317:4317"
       - "4318:4318"
-      - "3100:3100"
-      - "3200:3200"
     depends_on:
       redpanda-0:
         condition: service_healthy
 
-  neo4j:
-    image: neo4j
-    container_name: neo4j
-    networks:
-      - redpanda_network
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-      - neo4j_plugins:/plugins
-    environment:
-      NEO4J_AUTH: "none"
-      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
-      NEO4J_apoc_export_file_enabled: "true"
-      NEO4J_apoc_import_file_enabled: "true"
-      NEO4J_server_memory_pagecache_size: 1G
-      NEO4J_server_memory_heap_initial__size: 1G
-      NEO4J_server_memory_heap_max__size: 1G
-    ports:
-      - "7474:7474"
-      - "7687:7687"
+  # finnhub-news:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.finnhub_news
+  #   container_name: finnhub-news
+  #   env_file: .env
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # finnhub-stocks:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.finnhub_stocks
+  #   container_name: finnhub-stocks
+  #   env_file: .env
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # finnhub-filings:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.finnhub_filings
+  #   container_name: finnhub-filings
+  #   env_file: .env
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # reddit-socials:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.reddit_socials
+  #   container_name: reddit-socials
+  #   env_file: .env
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # silver-news:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.silver_runner
+  #     args:
+  #       PIPELINE: "NEWS"
+  #   container_name: silver-news
+  #   env_file: .env
+  #   environment:
+  #     PIPELINE: "NEWS"
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # silver-stocks:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.silver_runner
+  #     args:
+  #       PIPELINE: "STOCKS"
+  #   container_name: silver-stocks
+  #   env_file: .env
+  #   environment:
+  #     PIPELINE: "STOCKS"
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # silver-socials:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.silver_runner
+  #     args:
+  #       PIPELINE: "SOCIALS"
+  #   container_name: silver-socials
+  #   env_file: .env
+  #   environment:
+  #     PIPELINE: "SOCIALS"
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped
+
+  # silver-filings:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.silver_runner
+  #     args:
+  #       PIPELINE: "FILINGS"
+  #   container_name: silver-filings
+  #   env_file: .env
+  #   environment:
+  #     PIPELINE: "FILINGS"
+  #   networks:
+  #     - redpanda_network
+  #   depends_on:
+  #     topic-init: {condition: service_completed_successfully}
+  #   restart: unless-stopped

@@ -5,7 +5,7 @@ import json
 import signal
 import logging
 import pathway as pw
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from src.schemas.silver_schemas import FinnHubNewsSchema, FinnHubStockSchema
 from src.utils.common import common_config, profiles
 from src.agents.finbert import FinBertSentimentAnalyzer
@@ -30,7 +30,7 @@ def debug_statement(*args):
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 finbert_analyzer = FinBertSentimentAnalyzer()
-load_dotenv()
+load_dotenv(find_dotenv)()
 
 _minio = MinioStorage()
 _summarizer = FilingsSummarizer()

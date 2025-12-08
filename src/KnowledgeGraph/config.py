@@ -3,13 +3,18 @@ Configuration module for Financial Knowledge Graph System
 """
 from dataclasses import dataclass, field
 from typing import Optional
+import os
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv())
+
 
 @dataclass
 class Neo4jConfig:
     """Neo4j database configuration"""
     uri: str = "bolt://localhost:7687"
-    username: str = "neo4j"
-    password: str = "neo4jadmin"
+    username: str = os.getenv("NEO4J_USERNAME")
+    password: str = os.getenv("NEO4J_PASSWORD")
     database: str = "neo4j"
 
 @dataclass

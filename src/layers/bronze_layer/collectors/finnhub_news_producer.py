@@ -1,10 +1,10 @@
 import os, time, datetime, logging, finnhub, requests
 from typing import List, Dict
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from src.layers.bronze_layer.base.base_producer import BaseProducer
 from src.layers.bronze_layer.event_envelope import create_event_envelope
 
-load_dotenv()
+load_dotenv(find_dotenv())
 _RETRY = (5, 10, 20)
 _TIMEOUT = ((10, 30), (15, 40), (20, 50))
 

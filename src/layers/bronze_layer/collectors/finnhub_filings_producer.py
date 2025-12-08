@@ -7,14 +7,14 @@ import re
 import finnhub
 from bs4 import BeautifulSoup
 from typing import Dict, List
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 from src.layers.bronze_layer.base.base_producer import BaseProducer
 from src.layers.bronze_layer.event_envelope import create_event_envelope
 from src.utils.minio_storage import MinioStorage
 
 # Load environment variables
-load_dotenv()
+load_dotenv(find_dotenv())
 
 _RETRY = (5, 10, 20)
 

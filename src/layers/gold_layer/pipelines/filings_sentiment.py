@@ -5,12 +5,12 @@ import json
 import signal
 import logging
 import pathway as pw
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from src.schemas.silver_schemas import FinnhubFilingsSchema
 from src.utils.common import common_config, profiles
 
 # --- SETUP & LOGGING ---
-load_dotenv()
+load_dotenv(find_dotenv)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
 logger = logging.getLogger(__name__)

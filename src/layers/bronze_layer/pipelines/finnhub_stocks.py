@@ -5,7 +5,7 @@ import uuid
 import signal
 import logging
 import pathway as pw
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from datetime import datetime
 from confluent_kafka.admin import AdminClient
 from confluent_kafka import Producer
@@ -101,9 +101,9 @@ def validate_env(logger):
         "REDPANDA_BRONZE_STOCKS_TOPIC",
         "REDPANDA_BROKERS",
         "REDPANDA_SECURITY_PROTOCOL",
-        # "REDPANDA_SASL_MECHANISM",
-        # "REDPANDA_USERNAME",
-        # "REDPANDA_PASSWORD",
+        "REDPANDA_SASL_MECHANISM",
+        "REDPANDA_USERNAME",
+        "REDPANDA_PASSWORD",
     ]
     missing = [k for k in required if not os.getenv(k)]
     if missing:
@@ -141,7 +141,7 @@ def validate_producer(config):
     logger.info("Producer OK")
 
 def main():
-    load_dotenv()
+    load_dotenv(find_dotenv())
     validate_env(logger)
 
     pw.set_license_key(os.getenv("PATHWAY_LICENSE_KEY"))

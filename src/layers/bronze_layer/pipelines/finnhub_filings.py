@@ -6,7 +6,7 @@ import uuid
 import signal
 import logging
 from datetime import datetime
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import pathway as pw
 import finnhub
 
@@ -17,7 +17,7 @@ from src.layers.bronze_layer.collectors.finnhub_filings_producer import FinnhubF
 from src.utils.common import common_config, profiles
 from src.observability.helping import OTELLoggerManager, OTELMetricsManager
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(
@@ -154,9 +154,9 @@ def main():
         "TICKERS",
         "REDPANDA_BROKERS",
         "REDPANDA_SECURITY_PROTOCOL",
-        # "REDPANDA_SASL_MECHANISM",
-        # "REDPANDA_USERNAME",
-        # "REDPANDA_PASSWORD"
+        "REDPANDA_SASL_MECHANISM",
+        "REDPANDA_USERNAME",
+        "REDPANDA_PASSWORD"
     ]
 
     missing = [v for v in required if not os.getenv(v)]
