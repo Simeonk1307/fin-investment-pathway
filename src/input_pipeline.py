@@ -17,7 +17,7 @@ from src.utils.reducers import WeightedSentimentScoreAccumulator, SimpleSentimen
 from src.utils.minio_storage import MinioStorage
 from src.utils.filings_summarizer import FilingsSummarizer
 from src.agents.llm_factory import get_llm
-from src.utils.reducers import StockAccumulator
+# from src.utils.reducers import StockAccumulator
 
 LLM = get_llm('perplexity')
 
@@ -30,7 +30,7 @@ def debug_statement(*args):
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 finbert_analyzer = FinBertSentimentAnalyzer()
-load_dotenv(find_dotenv)()
+load_dotenv(find_dotenv())
 
 _minio = MinioStorage()
 _summarizer = FilingsSummarizer()
@@ -100,6 +100,7 @@ def _clean_json_string(text) -> str:
             return ""
 
 
+
 def _merge_texts(title, content) -> str:
     try:
         t = _clean_json_string(title)
@@ -126,6 +127,37 @@ def _get_sentiment_score(title, content) -> list[float]:
         logger.error(f"Unexpected error encountered while getting sentiment score: {e}")
         return [0.0, 0.0, 0.0]
 
+@pw.udf
+def get_ticker(ticker:str)->str:
+    ticker = ticker.replace('\\','')
+    ticker = ticker.replace('"','')
+    logger.info(ticker)
+    return ticker
+@pw.udf
+def get_weight_timestamp(timestamp: int) -> float:
+    """
+    Calculate weight for stock news with appropriate decay.
+    For stocks, use 10-day half-life (news from 10 days ago = 50% weight)
+    Args:
+        timestamp: Unix timestamp (e.g., 1734453535)
+    Returns:
+        Weight between 0.0001 and 1.0
+    """
+    
+    current_time = time.time()
+    age_seconds = current_time - timestamp
+    age_days = age_seconds / 86400  # Convert seconds to days
+    # logger.info(f"Calculating weight for timestamp {timestamp}, age in days: {age_days}")
+    # Day 0 (today): weight = 1.0
+    # Day 10: weight = 0.5
+    # Day 30: weight = 0.125
+
+    half_life_days = 10.0
+    weight = 2 ** (-age_days / half_life_days)
+    # logger.info(f"Calculated weight: {weight} for age in days: {age_days}")
+    # time.sleep(3)
+    
+    return max(weight, 0.0001)  # Minimum weight
 
 @pw.udf
 def merge_texts(title: str, content: str) -> str:
@@ -167,6 +199,7 @@ def news_input_pipeline()->pw.Table:
         symbol=pw.this.symbol,
         merged=merge_texts(pw.this.title, pw.this.content),
         sentiment=get_sentiment_score(pw.this.title, pw.this.content),
+        weight=get_weight_timestamp(pw.this.timestamp)
     )
 
     logger.info(f"[GOLD:{TEMP}] {TEMP} Data enriched")
@@ -323,15 +356,15 @@ def stock_signal_pipeline() -> pw.Table:
     """Read stock updates from a Silver stock topic, run predict_and_signal UDF,
     and write results to CSV. Returns the Pathway table of results.
     """
-    suffix = f"-{int(time.time())}" if DEBUG else ""
+    suffix = f"-{int(time.time())}"
     consumer = common_config | KAFKA_RESILIENCE | {
         "group.id": f"lstm-signals-stocks{suffix}",
         "auto.offset.reset": "earliest",
     }
 
-    STOCK_TOPIC = os.getenv("REDPANDA_SILVER_STOCK_TOPIC")
+    STOCK_TOPIC = os.getenv("REDPANDA_SILVER_STOCKS_TOPIC")
     if STOCK_TOPIC is None:
-        logger.warning("REDPANDA_SILVER_STOCK_TOPIC not set - stock_signal_pipeline will not run.")
+        logger.warning("REDPANDA_SILVER_STOCKS_TOPIC not set - stock_signal_pipeline will not run.")
         return None
 
     logger.info(f"[LSTM:STOCKS] Reading from {STOCK_TOPIC}")
@@ -343,12 +376,11 @@ def stock_signal_pipeline() -> pw.Table:
         format="json",
         autocommit_duration_ms=1000,
     )
-
     # Call the UDF; supply defaults for missing indicators
     predictions = stocks.select(
         symbol=pw.this.symbol,
         result=predict_and_signal(
-            pw.this.symbol,
+            get_ticker(pw.this.symbol),
             pw.this.price,
             pw.this.volume,
             0.0,  # Return not provided in silver stock schema
@@ -356,6 +388,7 @@ def stock_signal_pipeline() -> pw.Table:
             0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
         )
     )
+    pw.io.csv.write(predictions,f"{output_path}/stocks_data.csv")
 
     # Extract JSON values
     @pw.udf
@@ -375,22 +408,20 @@ def stock_signal_pipeline() -> pw.Table:
         rmse=get_key(pw.this.result, 'rmse', 0.0),
     )
 
-    out_dir = "outputs/lstm/signals"
-    os.makedirs(out_dir, exist_ok=True)
-    pw.io.csv.write(results, f"{out_dir}/signals.csv")
-
     return results
 
 
 if __name__ == "__main__":
     output_path = "debug_output/inputs"
     os.makedirs(output_path, exist_ok=True)
-    news_table= news_input_pipeline()
-    socials_table = social_input_pipeline()
-    filings_table = filings_input_pipeline()
+    # news_table= news_input_pipeline()
+    # socials_table = social_input_pipeline()
+    # filings_table = filings_input_pipeline()
+    stocks_table = stock_signal_pipeline()
 
-    pw.io.csv.write(news_table, f"{output_path}/news_sentiment.csv")
-    pw.io.csv.write(socials_table, f"{output_path}/socials_sentiment.csv")
-    pw.io.csv.write(filings_table, f"{output_path}/filings_sentiment.csv")
+    # pw.io.csv.write(news_table, f"{output_path}/news_sentiment.csv")
+    # pw.io.csv.write(socials_table, f"{output_path}/socials_sentiment.csv")
+    # pw.io.csv.write(filings_table, f"{output_path}/filings_data.csv")
+    # pw.io.csv.write(stocks_table,f"{output_path}/stocks_data.csv")
     # pw.io.jsonlines.write(news_table, "debug_output/news_sentiment.jsonl")
     pw.run()

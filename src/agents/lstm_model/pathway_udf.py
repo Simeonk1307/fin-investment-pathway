@@ -12,6 +12,10 @@ from typing import Any
 from src.agents.lstm_model.lstm_shadow import predict_stock, initialize_manager
 from src.agents.lstm_model.signal_generator import generate_signal, load_strategy
 
+import logging 
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-5s | %(message)s")
+logger = logging.getLogger(__name__)
 
 @pw.udf
 def predict_and_signal(
@@ -65,6 +69,7 @@ def predict_and_signal(
         pass
 
     # Get model prediction
+    logger.info("[Stocks prediction] : Predictig signal")
     prediction = predict_stock(ticker, data_point)
 
     # Load strategy metadata (cached by load_strategy internally)
