@@ -71,6 +71,9 @@ def predict_and_signal(
     # Get model prediction
     logger.info("[Stocks prediction] : Predicting signal")
     prediction = predict_stock(ticker, data_point)
+    logger.info(f"[Stocks prediction] : Data point - {prediction}")
+    # import time
+    # time.sleep(5)
 
     # Load strategy metadata (cached by load_strategy internally)
     strategy = load_strategy(ticker)

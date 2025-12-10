@@ -8,7 +8,7 @@ import signal
 import os
 import logging
 
-load_dotenv(find_dotenv)
+load_dotenv(find_dotenv())
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 def shutdown_handler(signum, frame):
@@ -28,7 +28,7 @@ logging.getLogger("confluent_kafka").setLevel(logging.CRITICAL)
 def process_ticker(ticker: str,
                    news_articles: tuple[str],news_sentiment_scores: tuple[float],
                    socials_articles: tuple[str], socials_sentiment_scores: tuple[float],
-                   filings_summary:tuple[str]):
+                   filings_summary:tuple[str],market_data:tuple[tuple]):
 
     logger.info(f"[Main pipeline] Started agent graph for {ticker}")
     logger.info(f"[Main pipeline] News Sentiment scores : {news_sentiment_scores}")
@@ -61,6 +61,7 @@ def process_ticker(ticker: str,
 
         "market_data":{
             # check market data
+            "market_data": market_data
         },
 
         "news_analysis":{
@@ -121,11 +122,18 @@ def run_agent_pipeline(
         symbol=pw.this.symbol,
         filing_summary=pw.this.filing_summary
     )
+    analyzed_lstm_predictions=stocks_table.select(
+        symbol=pw.this.symbol,
+        market_data=pw.this.market_data
+    )
 
     logger.info(f"[SOCIALS] Sentiment analysis done")
 
     agents_input = analysed_news.join(analysed_socials, pw.left.symbol == pw.right.symbol)
     agents_input = agents_input.join(analysed_filings, pw.left.symbol == pw.right.symbol)
+    agents_input = agents_input.join(analyzed_lstm_predictions, pw.left.symbol == pw.right.symbol)
+    logger.info(f"[AGENT PIPELINE] Input tables joined")
+    pw.io.csv.write(agents_input, f"{output_path}agent_pipeline_input_table.csv")
      # Process through LangGraph
     agents_output = agents_input.select(
         symbol=pw.this.symbol,
@@ -138,7 +146,8 @@ def run_agent_pipeline(
             pw.this.news_sentiment_scores,
             pw.this.socials_articles,
             pw.this.socials_sentiment_scores,
-            pw.this.filing_summary)
+            pw.this.filing_summary,
+            pw.this.market_data)
     )
     
     # Process through LangGraph
@@ -150,10 +159,10 @@ def run_agent_pipeline(
         reason=get_element(pw.this.analysis, "reason"),
         strategy=get_element(pw.this.analysis, "strategy"),
     )
-    if DEBUG:
-        os.makedirs(output_path, exist_ok=True)
-        pw.io.csv.write(results, f"{output_path}agent_pipeline_news_analysis.csv")
-        pw.io.jsonlines.write(results, f"{output_path}agent_pipeline_news_analysis.jsonl")
+# if DEBUG:
+    os.makedirs(output_path, exist_ok=True)
+    pw.io.csv.write(results, f"{output_path}agent_pipeline_news_analysis.csv")
+    pw.io.jsonlines.write(results, f"{output_path}agent_pipeline_news_analysis.jsonl")
 
     return results
 
@@ -163,17 +172,18 @@ def run_main_pipeline():
     news_table = news_input_pipeline()
     socials_table = social_input_pipeline()
     filings_table = filings_input_pipeline()
+    stocks_table = stock_signal_pipeline()
     # Optional: create stock signal pipeline (will be a no-op if env var not set)
-    try:
-        stock_table = stock_signal_pipeline()
-    except Exception:
-        stock_table = None
+    # try:
+    #     stock_table = stock_signal_pipeline()
+    # except Exception:
+    #     stock_table = None
 
     run_agent_pipeline(
         news_table=news_table,
         socials_table=socials_table,
         filings_table=filings_table,
-        stocks_table=stock_table,
+        stocks_table=stocks_table,
         output_path="debug_output/agents/"
     )
     pw.run()

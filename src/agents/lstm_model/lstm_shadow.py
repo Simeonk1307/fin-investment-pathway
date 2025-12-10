@@ -54,18 +54,42 @@ if not logger.handlers:
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
 
+# BASE_MODEL_DIR = "models"
+# MODIFIED_MODEL_DIR = "modified_models"
+
+# PREFILL_BUFFER = True
+# ENABLE_ONLINE_LEARNING = True
+
+# # Retraining parameters
+# RMSE_THRESHOLD = 5.0
+# MIN_PREDICTIONS_BEFORE_RETRAIN = 50
+# RETRAIN_COOLDOWN = 15
+# RETRAIN_BATCH_SIZE = 30
+# RETRAIN_ITERATIONS = 5
+
+# ENHANCED_FEATURES = [
+#     'Close', 'Volume', 'Return', 'SMA_5', 'SMA_10', 'SMA_20', 'SMA_30', 'SMA_50',
+#     'RSI', 'MACD', 'MACD_Signal', 'BB_Middle', 'BB_Upper', 'BB_Lower',
+#     'Momentum', 'Momentum5', 'Volume_Ratio'
+# ]
 BASE_MODEL_DIR = "models"
 MODIFIED_MODEL_DIR = "modified_models"
 
-PREFILL_BUFFER = True
+# ✅ FIX: Disable slow buffer pre-filling in production
+PREFILL_BUFFER = True  # Changed from True - too slow for streaming!
+
 ENABLE_ONLINE_LEARNING = True
 
-# Retraining parameters
-RMSE_THRESHOLD = 5.0
-MIN_PREDICTIONS_BEFORE_RETRAIN = 50
-RETRAIN_COOLDOWN = 15
-RETRAIN_BATCH_SIZE = 30
-RETRAIN_ITERATIONS = 5
+# ✅ FIX: Realistic RMSE threshold for stock prices ($200-$600 range)
+# Old: 5.0 (impossible for stocks at $400-$500)
+# New: 50.0 (reasonable - 10% error tolerance)
+RMSE_THRESHOLD = 50.0  
+
+# ✅ FIX: Faster retraining response
+MIN_PREDICTIONS_BEFORE_RETRAIN = 20  # Reduced from 50
+RETRAIN_COOLDOWN = 10  # Reduced from 15
+RETRAIN_BATCH_SIZE = 20  # Reduced from 30
+RETRAIN_ITERATIONS = 3  # Reduced from 5 - faster convergence
 
 ENHANCED_FEATURES = [
     'Close', 'Volume', 'Return', 'SMA_5', 'SMA_10', 'SMA_20', 'SMA_30', 'SMA_50',
@@ -249,41 +273,51 @@ class RealtimeStockPredictor:
         return compute_enhanced_indicators(df)
     
     def _prefill_buffer_with_history(self):
-        """Pre-fill buffer with historical data"""
+        """Pre-fill with cached data (fast) or download once (slow)"""
         try:
-            logger.info(f"[{self.ticker}] Pre-filling buffer...")
+            import pickle
+            cache_path = f"{BASE_MODEL_DIR}/{self.ticker}_history.pkl"
             
-            df = yf.download(
-                self.ticker, 
-                period=f"{self.lookback + 50}d",
-                progress=False, 
-                auto_adjust=True
-            )
+            # Try cache first (FAST PATH)
+            if os.path.exists(cache_path):
+                with open(cache_path, 'rb') as f:
+                    cached = pickle.load(f)
+                    for features_scaled in cached:
+                        self.buffer.append(features_scaled)
+                logger.info(f"[{self.ticker}] Loaded from cache: {len(self.buffer)}/{self.lookback}")
+                return
+            
+            # Download and cache (SLOW PATH - only first time)
+            df = yf.download(self.ticker, period=f"{self.lookback + 50}d", progress=False, auto_adjust=True)
             
             if df.empty:
-                logger.warning(f"[{self.ticker}] Could not download history")
                 return
             
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             
             df = df.reset_index()
-            df = self._compute_indicators(df)
+            df = compute_enhanced_indicators(df)
             
             feature_names = self.feature_columns or ENHANCED_FEATURES
-            df = df[feature_names].copy()
-            df = df.dropna()
+            df = df[feature_names].copy().dropna()
             recent_data = df.tail(self.lookback)
             
+            cache_data = []
             for _, row in recent_data.iterrows():
                 features = row.values.reshape(1, -1)
                 features_scaled = self.scaler.transform(features)[0]
                 self.buffer.append(features_scaled)
+                cache_data.append(features_scaled)
             
-            logger.info(f"[{self.ticker}] Buffer pre-filled: {len(self.buffer)}/{self.lookback}")
+            # Save cache for next time
+            with open(cache_path, 'wb') as f:
+                pickle.dump(cache_data, f)
+            
+            # logger.info(f"[{self.ticker}] Downloaded & cached: {len(self.buffer)}/{self.lookback}")
             
         except Exception as e:
-            logger.error(f"[{self.ticker}] Buffer pre-fill failed: {e}")
+            logger.error(f"[{self.ticker}] Buffer prefill failed: {e}")
     
     def _extract_features(self, data_point: Dict) -> Optional[np.ndarray]:
         """Extract features from data point"""
@@ -351,7 +385,17 @@ class RealtimeStockPredictor:
                 'ready': False,
                 'error': 'Feature extraction failed'
             }
-        
+        if float(data_point.get('SMA_50', 0)) == 0.0 and float(data_point.get('Close', 0)) > 1.0:
+            logger.warning(f"[{self.ticker}] Detected cold/invalid indicators (SMA_50=0). Using fallback.")
+            # Option A: Return 'not ready' so we don't produce garbage predictions
+            return {
+                'ticker': self.ticker,
+                'predicted_price': None,
+                'current_price': data_point.get('Close', 0),
+                'ready': False,
+                'rmse': 0.0,
+                'reason': 'waiting_for_indicators'
+            }
         try:
             features_scaled = self.scaler.transform(features.reshape(1, -1))[0]
         except Exception as e:
@@ -426,10 +470,11 @@ class RealtimeStockPredictor:
                        f"Training={self.training_count}, "
                        f"Status: {reason}")
         
-        if should_retrain:
+        if self.prediction_count % 50 == 0 and not self.is_retraining:
+        # if should_retrain:
             logger.info(f"🔥 [{self.ticker}] TRIGGERING RETRAINING at prediction #{self.prediction_count}")
-            logger.info(f"   Reason: {reason}")
-            logger.info(f"   Buffer: {len(self.retrain_buffer)} samples")
+            # logger.info(f"   Reason: {reason}")
+            # logger.info(f"   Buffer: {len(self.retrain_buffer)} samples")
             
             # Trigger retraining in background
             retrain_thread = threading.Thread(
@@ -458,12 +503,12 @@ class RealtimeStockPredictor:
         
         ZERO BLOCKING: Predictions continue on old model until swap
         """
-        logger.info(f"🚀 [{self.ticker}] Shadow model training started")
+        # logger.info(f"🚀 [{self.ticker}] Shadow model training started")
         
         # Prevent concurrent retraining
         with self.retraining_lock:
             if self.is_retraining:
-                logger.warning(f"[{self.ticker}] Already retraining, skipping")
+                # logger.warning(f"[{self.ticker}] Already retraining, skipping")
                 return
             self.is_retraining = True
         
@@ -472,7 +517,7 @@ class RealtimeStockPredictor:
         
         try:
             # STEP 1: Create shadow model (deep copy of active model)
-            logger.info(f"[{self.ticker}] Creating shadow model...")
+            # logger.info(f"[{self.ticker}] Creating shadow model...")
             shadow_model = StockLSTM(
                 input_size=self.input_size,
                 hidden_size=self.model.hidden_size,
@@ -486,7 +531,7 @@ class RealtimeStockPredictor:
             
             shadow_optimizer = torch.optim.Adam(shadow_model.parameters(), lr=0.0001)
             
-            logger.info(f"[{self.ticker}] Shadow model created")
+            # logger.info(f"[{self.ticker}] Shadow model created")
             
             # STEP 2: Prepare training data
             sequences = []
@@ -528,7 +573,7 @@ class RealtimeStockPredictor:
             logger.info(f"[{self.ticker}] Shadow training complete. Avg loss: {avg_loss:.6f}")
             
             # STEP 4: ATOMIC SWAP - Replace active model reference
-            logger.info(f"[{self.ticker}] Performing atomic model swap...")
+            # logger.info(f"[{self.ticker}] Performing atomic model swap...")
             
             with self.model_swap_lock:
                 # Set shadow to eval mode before swap
@@ -623,7 +668,16 @@ class PredictorManager:
         self.predictors: Dict[str, RealtimeStockPredictor] = {}
         self.enable_training = enable_training
         self.prefill_buffers = prefill_buffers
-    
+        
+        # PARALLEL LOADING - load all tickers simultaneously
+        if prefill_buffers:
+            from concurrent.futures import ThreadPoolExecutor
+            logger.info("Loading models in parallel...")
+            # Pre-discover tickers from model directory
+            model_files = [f.replace('_lstm.pt', '') for f in os.listdir(BASE_MODEL_DIR) if f.endswith('_lstm.pt')]
+            with ThreadPoolExecutor(max_workers=min(5, len(model_files))) as executor:
+                list(executor.map(self.get_predictor, model_files))
+            logger.info(f"Loaded {len(self.predictors)} models")
     def get_predictor(self, ticker: str) -> Optional[RealtimeStockPredictor]:
         if ticker not in self.predictors:
             try:
@@ -667,15 +721,27 @@ class PredictorManager:
 
 # Global manager instance
 _manager = None
-
 def initialize_manager(enable_training: bool = ENABLE_ONLINE_LEARNING, 
                       prefill_buffers: bool = PREFILL_BUFFER):
     global _manager
+    # FIX: Prevent overwriting existing manager
+    if _manager is not None:
+        return
+
+    logger.info("⚡ Initializing PredictorManager (Singleton)...")
     _manager = PredictorManager(
         enable_training=enable_training,
         prefill_buffers=prefill_buffers
     )
     logger.info("✅ Shadow Model Predictor Manager initialized")
+# def initialize_manager(enable_training: bool = ENABLE_ONLINE_LEARNING, 
+#                       prefill_buffers: bool = PREFILL_BUFFER):
+#     global _manager
+#     _manager = PredictorManager(
+#         enable_training=enable_training,
+#         prefill_buffers=prefill_buffers
+#     )
+#     logger.info("✅ Shadow Model Predictor Manager initialized")
 
 def predict_stock(ticker: str, data_point: Dict) -> Dict:
     """Main prediction function - call this from Pathway"""

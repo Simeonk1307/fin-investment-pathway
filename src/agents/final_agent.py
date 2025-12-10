@@ -39,7 +39,7 @@ def final_agent(state:AgentState) -> dict:
 
         COMPANY : {state['ticker']}
 
-        market data : {state['market_data']}
+        market data : {state['market_data']}[tuple of (current_price:float, volume:int, timestamp:int, predicted_price:float)]
 
         Based on the above analyses, provide:
         1. Final prediction: Will the stock price go UP, DOWN, or stay NEUTRAL?

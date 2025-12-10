@@ -19,6 +19,17 @@ from src.utils.filings_summarizer import FilingsSummarizer
 from src.agents.llm_factory import get_llm
 # from src.utils.reducers import StockAccumulator
 
+from src.utils.indicator_calculator import get_calculator
+
+# Initialize global calculator
+calculator = get_calculator()
+
+@pw.udf
+def compute_indicators(ticker: str, price: float, volume: float) -> pw.Json:
+    """Compute all technical indicators for a stock update"""
+    indicators = calculator.update(ticker, price, volume)
+    return indicators
+
 LLM = get_llm('perplexity')
 
 def debug_statement(*args):
@@ -353,9 +364,7 @@ def filings_input_pipeline() -> pw.Table:
 
 
 def stock_signal_pipeline() -> pw.Table:
-    """Read stock updates from a Silver stock topic, run predict_and_signal UDF,
-    and write results to CSV. Returns the Pathway table of results.
-    """
+    """Read stock updates, compute indicators, and generate signals"""
     suffix = f"-{int(time.time())}"
     consumer = common_config | KAFKA_RESILIENCE | {
         "group.id": f"lstm-signals-stocks{suffix}",
@@ -364,7 +373,7 @@ def stock_signal_pipeline() -> pw.Table:
 
     STOCK_TOPIC = os.getenv("REDPANDA_SILVER_STOCKS_TOPIC")
     if STOCK_TOPIC is None:
-        logger.warning("REDPANDA_SILVER_STOCKS_TOPIC not set - stock_signal_pipeline will not run.")
+        logger.warning("REDPANDA_SILVER_STOCKS_TOPIC not set")
         return None
 
     logger.info(f"[LSTM:STOCKS] Reading from {STOCK_TOPIC}")
@@ -376,26 +385,59 @@ def stock_signal_pipeline() -> pw.Table:
         format="json",
         autocommit_duration_ms=1000,
     )
-    # Call the UDF; supply defaults for missing indicators
-    predictions = stocks.select(
-        symbol=pw.this.symbol,
-        result=predict_and_signal(
+    
+    # ✅ COMPUTE REAL INDICATORS
+    with_indicators = stocks.select(
+        symbol=get_ticker(pw.this.symbol),
+        price=pw.this.price,
+        volume=pw.this.volume,
+        timestamp=pw.this.timestamp,
+        indicators=compute_indicators(
             get_ticker(pw.this.symbol),
             pw.this.price,
-            pw.this.volume,
-            0.0,  # Return not provided in silver stock schema
-            0.0,0.0,0.0,0.0,0.0,  # SMA_5..SMA_50
-            0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+            pw.this.volume
         )
     )
-    # pw.io.csv.write(predictions,f"{output_path}/stocks_data.csv")
+    
+    # ✅ EXTRACT INDICATORS AND CALL LSTM
+    @pw.udf
+    def get_ind(data: pw.Json, key: str, default: float = 0.0) -> float:
+        try:
+            return data[key]
+        except:
+            return default
+    
+    predictions = with_indicators.select(
+        symbol=pw.this.symbol,
+        timestamp=pw.this.timestamp,
+        result=predict_and_signal(
+            pw.this.symbol,
+            get_ind(pw.this.indicators, 'Close'),
+            get_ind(pw.this.indicators, 'Volume'),
+            get_ind(pw.this.indicators, 'Return'),
+            get_ind(pw.this.indicators, 'SMA_5'),
+            get_ind(pw.this.indicators, 'SMA_10'),
+            get_ind(pw.this.indicators, 'SMA_20'),
+            get_ind(pw.this.indicators, 'SMA_30'),
+            get_ind(pw.this.indicators, 'SMA_50'),
+            get_ind(pw.this.indicators, 'RSI'),
+            get_ind(pw.this.indicators, 'MACD'),
+            get_ind(pw.this.indicators, 'MACD_Signal'),
+            get_ind(pw.this.indicators, 'BB_Middle'),
+            get_ind(pw.this.indicators, 'BB_Upper'),
+            get_ind(pw.this.indicators, 'BB_Lower'),
+            get_ind(pw.this.indicators, 'Momentum'),
+            get_ind(pw.this.indicators, 'Momentum5'),
+            get_ind(pw.this.indicators, 'Volume_Ratio'),
+        )
+    )
 
-    # Extract JSON values
+    # Extract results
     @pw.udf
     def get_key(data: pw.Json, key: str, default=None):
         try:
             return data[key]
-        except Exception:
+        except:
             return default
 
     results = predictions.select(
@@ -407,8 +449,16 @@ def stock_signal_pipeline() -> pw.Table:
         confidence=get_key(pw.this.result, 'confidence', 0.0),
         rmse=get_key(pw.this.result, 'rmse', 0.0),
     )
+    @pw.udf
+    def merge_timestamp_predictions(timestamp: int, predicted_price: float) -> tuple[int, float]:
+        return (timestamp, predicted_price)
 
-    return results
+    predictions = predictions.groupby(pw.this.symbol).reduce(
+        symbol=pw.this.symbol,
+        market_data=pw.reducers.tuple(merge_timestamp_predictions(pw.this.timestamp, get_key(pw.this.result, 'predicted_price', 0.0)))
+    )
+
+    return predictions
 
 
 if __name__ == "__main__":
