@@ -116,7 +116,7 @@ def create_silver_pipeline(
 
     logger.info(f"[{name}] Bronze: {bronze} | Silver: {silver} | DLQ: {dlq}")
 
-    suffix = f"-{int(time.time())}" if debug else ""
+    suffix = f"-{int(time.time())}"
     
     consumer = common_config | KAFKA_RESILIENCE | extra | {
         "group.id": f"bronze-{name.lower()}-consumer{suffix}",

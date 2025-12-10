@@ -45,7 +45,7 @@ class FinBertSentimentAnalyzer:
         # return  float(sentiment_score)
         return_order = ["negative", "neutral", "positive"]
         return_probabilties = [order_probabilties[label] for label in return_order]
-        logger.info(f"[FINBERT] Sentiment Analysed {return_probabilties}")
+        # logger.info(f"[FINBERT] Sentiment Analysed {return_probabilties}")
         return tuple(return_probabilties)
     
     def analyze_batch(self, texts: list[str]) -> list[tuple[str, float]]:

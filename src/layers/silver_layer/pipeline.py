@@ -3,6 +3,7 @@ import sys
 import signal
 import logging
 import pathway as pw
+from dotenv import load_dotenv, find_dotenv
 
 from src.layers.silver_layer.core import create_silver_pipeline
 from src.schemas.silver_schemas import (
@@ -22,6 +23,8 @@ logging.basicConfig(
 
 import time
 from src.observability.helping import OTELLoggerManager, OTELMetricsManager
+
+load_dotenv(find_dotenv())
 
 # -------------------- OBSERVABILITY SETUP --------------------
 logger_manager = OTELLoggerManager(
@@ -151,10 +154,10 @@ def validate_env():
 
 def main():
     print("[SILVER] Starting...", flush=True)
-    
+    load_dotenv(find_dotenv())
     pipeline = validate_env()
     config = PIPELINES[pipeline]
-    debug = os.getenv("DEBUG", "false").lower() == "true"
+    debug = (os.getenv("DEBUG").lower() == "true")
 
     print(f"[SILVER] Pipeline: {pipeline}", flush=True)
     print(f"[SILVER] Mode: {'DEBUG' if debug else 'PRODUCTION'}", flush=True)

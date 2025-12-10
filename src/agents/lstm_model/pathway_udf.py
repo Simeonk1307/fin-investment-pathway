@@ -69,7 +69,7 @@ def predict_and_signal(
         pass
 
     # Get model prediction
-    logger.info("[Stocks prediction] : Predictig signal")
+    logger.info("[Stocks prediction] : Predicting signal")
     prediction = predict_stock(ticker, data_point)
 
     # Load strategy metadata (cached by load_strategy internally)
@@ -88,4 +88,5 @@ def predict_and_signal(
         'confidence': signal.get('confidence')
     }
 
+    logger.info(f"[Stocks prediction] : Output - {out}")
     return out

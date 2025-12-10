@@ -175,7 +175,7 @@ def news_input_pipeline()->pw.Table:
     SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
     
 
-    suffix = f"-{int(time.time())}" if DEBUG else ""
+    suffix = f"-{int(time.time())}"
     consumer = common_config | KAFKA_RESILIENCE | {
         "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
         "auto.offset.reset": "earliest",
@@ -221,7 +221,7 @@ def social_input_pipeline()->pw.Table:
     SILVER_TOPIC = os.getenv(f"REDPANDA_SILVER_{TEMP}_TOPIC")
     
 
-    suffix = f"-{int(time.time())}" if DEBUG else ""
+    suffix = f"-{int(time.time())}"
     consumer = common_config | KAFKA_RESILIENCE | {
         "group.id": f"finbert-sentiment-{TEMP.lower()}{suffix}",
         "auto.offset.reset": "earliest",
@@ -300,7 +300,7 @@ def filings_input_pipeline() -> pw.Table:
     SILVER_TOPIC = os.getenv("REDPANDA_SILVER_FILINGS_TOPIC")
     
     consumer = common_config | KAFKA_RESILIENCE | {
-        "group.id": f"gold-filings-{int(time.time())}" if DEBUG else "gold-filings",
+        "group.id": f"gold-filings-{int(time.time())}",
         "auto.offset.reset": "earliest",
     }
     
@@ -388,13 +388,13 @@ def stock_signal_pipeline() -> pw.Table:
             0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
         )
     )
-    pw.io.csv.write(predictions,f"{output_path}/stocks_data.csv")
+    # pw.io.csv.write(predictions,f"{output_path}/stocks_data.csv")
 
     # Extract JSON values
     @pw.udf
     def get_key(data: pw.Json, key: str, default=None):
         try:
-            return data.get(key, default)
+            return data[key]
         except Exception:
             return default
 
@@ -414,14 +414,14 @@ def stock_signal_pipeline() -> pw.Table:
 if __name__ == "__main__":
     output_path = "debug_output/inputs"
     os.makedirs(output_path, exist_ok=True)
-    # news_table= news_input_pipeline()
-    # socials_table = social_input_pipeline()
-    # filings_table = filings_input_pipeline()
+    news_table= news_input_pipeline()
+    socials_table = social_input_pipeline()
+    filings_table = filings_input_pipeline()
     stocks_table = stock_signal_pipeline()
 
-    # pw.io.csv.write(news_table, f"{output_path}/news_sentiment.csv")
-    # pw.io.csv.write(socials_table, f"{output_path}/socials_sentiment.csv")
-    # pw.io.csv.write(filings_table, f"{output_path}/filings_data.csv")
-    # pw.io.csv.write(stocks_table,f"{output_path}/stocks_data.csv")
+    pw.io.csv.write(news_table, f"{output_path}/news_sentiment.csv")
+    pw.io.csv.write(socials_table, f"{output_path}/socials_sentiment.csv")
+    pw.io.csv.write(filings_table, f"{output_path}/filings_data.csv")
+    pw.io.csv.write(stocks_table,f"{output_path}/stocks_data.csv")
     # pw.io.jsonlines.write(news_table, "debug_output/news_sentiment.jsonl")
     pw.run()
