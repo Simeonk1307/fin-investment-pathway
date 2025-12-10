@@ -142,7 +142,6 @@ def _get_sentiment_score(title, content) -> list[float]:
 def get_ticker(ticker:str)->str:
     ticker = ticker.replace('\\','')
     ticker = ticker.replace('"','')
-    logger.info(ticker)
     return ticker
 @pw.udf
 def get_weight_timestamp(timestamp: int) -> float:

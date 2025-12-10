@@ -107,7 +107,7 @@ def run_agent_pipeline(
     def get_ticker(ticker:str)->str:
         ticker = ticker.replace('\\','')
         ticker = ticker.replace('"','')
-        logger.info(ticker)
+        # logger.info(ticker)
         return ticker
     
     # Extract ticker and prepare minimal state
