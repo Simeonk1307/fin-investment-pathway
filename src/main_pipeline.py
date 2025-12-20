@@ -29,6 +29,25 @@ def process_ticker(ticker: str,
                    news_articles: tuple[str],news_sentiment_scores: tuple[float],
                    socials_articles: tuple[str], socials_sentiment_scores: tuple[float],
                    filings_summary:tuple[str],market_data:tuple[tuple]):
+    
+    #handling empty inputs
+    if not filings_summary:
+        filings_summary = ("",)
+    
+    if not market_data:
+        market_data = ((),)
+
+    if not news_articles:
+        news_articles = ("",)
+
+    if not socials_articles:
+        socials_articles = ("",)
+
+    if not news_sentiment_scores:
+        news_sentiment_scores = (0.0,)
+
+    if not socials_sentiment_scores:
+        socials_sentiment_scores = (0.0,)
 
     logger.info(f"[Main pipeline] Started agent graph for {ticker}")
     logger.info(f"[Main pipeline] News Sentiment scores : {news_sentiment_scores}")
@@ -155,11 +174,12 @@ def run_agent_pipeline(
     )
     
     # === DEBUG: After first join ===
-    pw.io.csv.write(agents_input, f"{output_path}debug_7_after_join1.csv")
+    # pw.io.csv.write(agents_input, f"{output_path}debug_7_after_join1.csv")
     
     agents_input = agents_input.join(
         analysed_filings, 
-        pw.left.symbol == pw.right.symbol
+        pw.left.symbol == pw.right.symbol,
+        how=pw.JoinMode.LEFT  # Keep all rows from left
     ).select(
         symbol=pw.left.symbol,
         news_articles=pw.left.news_articles,
@@ -170,11 +190,12 @@ def run_agent_pipeline(
     )
     
     # === DEBUG: After second join ===
-    pw.io.csv.write(agents_input, f"{output_path}debug_8_after_join2.csv")
+    # pw.io.csv.write(agents_input, f"{output_path}debug_8_after_join2.csv")
     
     agents_input = agents_input.join(
         analyzed_lstm_predictions, 
-        pw.left.symbol == pw.right.symbol
+        pw.left.symbol == pw.right.symbol,
+        how=pw.JoinMode.LEFT  # Keep all rows from left
     ).select(
         symbol=pw.left.symbol,
         news_articles=pw.left.news_articles,
@@ -186,12 +207,8 @@ def run_agent_pipeline(
     )
     
     # === DEBUG: After all joins ===
-    pw.io.csv.write(agents_input, f"{output_path}debug_9_agents_input_final.csv")
-    logger.info("[PIPELINE] All joins completed, about to call process_ticker")
-
-
-
-
+    pw.io.csv.write(agents_input, f"{output_path}agents_input_final.csv")
+    logger.info(f"[PIPELINE] All joins completed, about to call process_ticker,total rows {agents_input.reduce(count=pw.reducers.count())}")
 
      # Process through LangGraph
     agents_output = agents_input.select(
