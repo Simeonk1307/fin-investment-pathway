@@ -1,4 +1,5 @@
 from transformers import pipeline
+import torch
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,12 +10,17 @@ class FilingsSummarizer:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            
+            # Auto-detect GPU availability
+            device = 0 if torch.cuda.is_available() else -1
+            device_name = f"GPU ({torch.cuda.get_device_name(0)})" if device == 0 else "CPU"
+            
             cls._instance.summarizer = pipeline(
                 "summarization",
                 model="sshleifer/distilbart-cnn-12-6",
-                device=-1
+                device=device
             )
-            logger.info("✅ DistilBART summarizer loaded")
+            logger.info(f"✅ DistilBART summarizer loaded on {device_name}")
         return cls._instance
     
     def summarize(self, text: str) -> str:
